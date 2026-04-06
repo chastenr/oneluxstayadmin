@@ -400,16 +400,369 @@ h2 {
   gap: 24px;
 }
 
-.dashboard-header {
+.ops-dashboard {
+  width: min(1400px, calc(100% - 32px));
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 24px 0;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 24px;
+}
+
+.ops-sidebar,
+.ops-topbar,
+.ops-summary-card,
+.ops-stat-card,
+.ops-panel {
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: rgba(255, 252, 247, 0.84);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+
+.ops-sidebar {
+  display: grid;
+  align-content: space-between;
+  gap: 24px;
+  padding: 24px 18px;
+  position: sticky;
+  top: 24px;
+  height: calc(100vh - 48px);
+}
+
+.ops-brand,
+.ops-nav,
+.ops-nav-group,
+.ops-main,
+.ops-topbar,
+.ops-summary-card,
+.ops-summary-copy,
+.ops-content-grid,
+.ops-panel,
+.ops-panel-header,
+.ops-alert-list,
+.ops-table,
+.ops-deposit-list,
+.ops-task-list {
+  display: grid;
+  gap: 16px;
+}
+
+.ops-brand-title,
+.ops-page-title,
+.ops-summary-card h3,
+.ops-panel h3 {
+  margin: 0;
+  font-family: var(--heading-font);
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+}
+
+.ops-brand-title {
+  font-size: 2.3rem;
+}
+
+.ops-page-title {
+  font-size: clamp(2.4rem, 5vw, 4.6rem);
+}
+
+.ops-summary-card h3,
+.ops-panel h3 {
+  font-size: 1.5rem;
+}
+
+.ops-nav-title,
+.ops-sidebar-label,
+.ops-subtitle,
+.ops-item-meta,
+.ops-table-time,
+.ops-stat-label,
+.ops-stat-note,
+.ops-sidebar-user {
+  margin: 0;
+  color: var(--muted);
+}
+
+.ops-nav-title,
+.ops-sidebar-label {
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.ops-nav-links {
+  display: grid;
+  gap: 8px;
+}
+
+.ops-nav-link {
+  text-align: left;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  padding: 12px 14px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.ops-nav-link.is-active {
+  background: rgba(157, 108, 63, 0.12);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+.ops-main {
+  align-content: start;
+  gap: 20px;
+}
+
+.ops-topbar,
+.ops-summary-card {
+  padding: 24px 26px;
+}
+
+.ops-topbar {
   grid-template-columns: minmax(0, 1fr) max-content;
   align-items: center;
-  padding: 28px;
+}
+
+.ops-topbar-actions,
+.ops-summary-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.button-ghost {
+  background: transparent;
+  color: var(--muted);
+  border-color: var(--line);
+}
+
+.ops-summary-card {
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  background:
+    radial-gradient(circle at top right, rgba(157, 108, 63, 0.13), transparent 28%),
+    rgba(255, 252, 247, 0.88);
+}
+
+.ops-summary-card p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.ops-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.ops-stat-card {
+  padding: 22px;
+}
+
+.ops-stat-value {
+  margin: 0;
+  font-family: var(--heading-font);
+  font-size: 3.2rem;
+  line-height: 0.95;
+}
+
+.ops-stat-note.is-positive {
+  color: var(--success);
+}
+
+.ops-stat-note.is-warning {
+  color: #a26a24;
+}
+
+.ops-content-grid {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.ops-panel {
+  padding: 22px;
+}
+
+.ops-panel-wide {
+  grid-column: span 8;
+}
+
+.ops-panel:not(.ops-panel-wide) {
+  grid-column: span 4;
+}
+
+.ops-panel-header {
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: start;
+}
+
+.ops-text-action {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  cursor: pointer;
+}
+
+.ops-alert-item,
+.ops-table-row,
+.ops-deposit-item,
+.ops-task-item {
+  display: grid;
+  gap: 10px;
+  align-items: center;
+  padding: 14px 0;
+  border-top: 1px solid rgba(38, 27, 18, 0.08);
+}
+
+.ops-alert-item:first-child,
+.ops-table-row:first-child,
+.ops-deposit-item:first-child,
+.ops-task-item:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.ops-alert-item,
+.ops-task-item {
+  grid-template-columns: minmax(0, 1fr) max-content;
+}
+
+.ops-table-row {
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  gap: 16px;
+}
+
+.ops-deposit-item {
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  gap: 12px;
+}
+
+.ops-item-title {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ops-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 0.84rem;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.ops-badge.is-high {
+  background: rgba(154, 61, 53, 0.12);
+  color: var(--error);
+}
+
+.ops-badge.is-medium,
+.ops-badge.is-warning {
+  background: rgba(162, 106, 36, 0.12);
+  color: #8d5d1f;
+}
+
+.ops-badge.is-neutral {
+  background: rgba(43, 33, 24, 0.08);
+  color: var(--text);
+}
+
+.ops-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ops-action-tile {
+  min-height: 92px;
+  border: 1px solid rgba(38, 27, 18, 0.08);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.ops-mini-metrics {
+  display: grid;
+  gap: 12px;
+}
+
+.ops-mini-metric {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.ops-mini-metric span,
+.ops-mini-metric strong {
+  margin: 0;
+}
+
+.booking-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.booking-block,
+.integration-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.booking-label,
+.booking-time {
+  margin: 0;
+  font-size: 0.84rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+.booking-value {
+  margin: 0;
+  font-family: var(--heading-font);
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.booking-timeline {
+  display: grid;
+  gap: 14px;
+}
+
+.booking-timeline-item {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 14px;
+  padding: 14px 0;
+  border-top: 1px solid rgba(38, 27, 18, 0.08);
+}
+
+.booking-timeline-item:first-child {
+  border-top: 0;
+  padding-top: 0;
 }
 
 @media (max-width: 900px) {
   .hero-panel,
   .auth-shell,
-  .dashboard-header,
   .metrics-grid {
     grid-template-columns: 1fr;
   }
@@ -422,6 +775,43 @@ h2 {
     width: 100%;
   }
 
+  .ops-dashboard {
+    width: min(100%, calc(100% - 20px));
+    grid-template-columns: 1fr;
+    padding: 20px 0 32px;
+  }
+
+  .ops-sidebar {
+    position: static;
+    height: auto;
+  }
+
+  .ops-topbar,
+  .ops-summary-card,
+  .ops-stat-grid,
+  .ops-content-grid,
+  .ops-panel-header,
+  .ops-table-row,
+  .ops-deposit-item,
+  .ops-task-item,
+  .ops-alert-item {
+    grid-template-columns: 1fr;
+  }
+
+  .ops-panel-wide,
+  .ops-panel:not(.ops-panel-wide) {
+    grid-column: span 12;
+  }
+
+  .ops-action-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .booking-grid,
+  .booking-timeline-item {
+    grid-template-columns: 1fr;
+  }
+
   .home-shell,
   .auth-shell,
   .dashboard-shell {
@@ -431,8 +821,7 @@ h2 {
 
   .hero-panel,
   .auth-showcase,
-  .auth-card,
-  .dashboard-header {
+  .auth-card {
     padding: 22px;
   }
 }
