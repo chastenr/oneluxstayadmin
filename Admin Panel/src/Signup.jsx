@@ -32,7 +32,6 @@ function Signup() {
     setSubmitting(false)
 
     if (signUpError) {
-      console.error('Supabase sign up failed:', signUpError)
       setError(
         `${signUpError.message}${signUpError.status ? ` (status ${signUpError.status})` : ''}`
       )
@@ -48,53 +47,61 @@ function Signup() {
   }
 
   return (
-    <main className="minimal-shell">
-      <section className="minimal-panel minimal-panel-form">
-        <p className="eyebrow">ADMIN ONLY</p>
-        <h1 className="minimal-title">Sign up</h1>
-        <form className="auth-form" onSubmit={handleSubmit}>
-          <label className="field">
-            <span>Full name</span>
-            <input
-              type="text"
-              placeholder="Chasten Ramirez"
-              value={fullName}
-              onChange={(event) => setFullName(event.target.value)}
-              required
-            />
-          </label>
-          <label className="field">
-            <span>Email</span>
-            <input
-              type="email"
-              placeholder="admin@oneluxstay.com"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              required
-            />
-          </label>
-          <label className="field">
-            <span>Password</span>
-            <input
-              type="password"
-              placeholder="Choose a password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              required
-              minLength={6}
-            />
-          </label>
-          <button className="button button-primary" type="submit" disabled={submitting}>
-            {submitting ? 'Creating account...' : 'Create account'}
-          </button>
-        </form>
+    <main className="auth-page">
+      <section className="auth-shell">
+        <div className="auth-copy">
+          <p className="eyebrow">Hidden setup</p>
+          <h1 className="display-title">Create admin access.</h1>
+          <p className="body-copy">
+            Use this only for internal team onboarding while the admin workspace is being
+            configured.
+          </p>
+        </div>
 
-        {error ? <p className="status-message status-error">{error}</p> : null}
-        {message ? <p className="status-message status-success">{message}</p> : null}
-
-        <p className="auth-footer">
-          <Link to="/signin">Back to log in</Link>
-        </p>
+        <section className="auth-card">
+          <h2>Sign up</h2>
+          <form className="auth-form" onSubmit={handleSubmit}>
+            <label className="field">
+              <span>Full name</span>
+              <input
+                type="text"
+                placeholder="Chasten Ramirez"
+                value={fullName}
+                onChange={(event) => setFullName(event.target.value)}
+                required
+              />
+            </label>
+            <label className="field">
+              <span>Email</span>
+              <input
+                type="email"
+                placeholder="admin@oneluxstay.com"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                required
+              />
+            </label>
+            <label className="field">
+              <span>Password</span>
+              <input
+                type="password"
+                placeholder="Choose a password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+                minLength={6}
+              />
+            </label>
+            <button className="primary-button" type="submit" disabled={submitting}>
+              {submitting ? 'Creating account...' : 'Create account'}
+            </button>
+          </form>
+          {error ? <p className="status-error">{error}</p> : null}
+          {message ? <p className="status-success">{message}</p> : null}
+          <p className="subtle-link">
+            <Link to="/signin">Back to log in</Link>
+          </p>
+        </section>
       </section>
     </main>
   )

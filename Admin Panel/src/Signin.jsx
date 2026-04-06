@@ -31,36 +31,45 @@ function Signin() {
   }
 
   return (
-    <main className="minimal-shell">
-      <section className="minimal-panel minimal-panel-form">
-        <p className="eyebrow">ONELUXSTAY</p>
-        <h1 className="minimal-title">Log in</h1>
-        <form className="auth-form" onSubmit={handleSubmit}>
-          <label className="field">
-            <span>Email</span>
-            <input
-              type="email"
-              placeholder="admin@oneluxstay.com"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              required
-            />
-          </label>
-          <label className="field">
-            <span>Password</span>
-            <input
-              type="password"
-              placeholder="Enter your password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              required
-            />
-          </label>
-          <button className="button button-primary" type="submit" disabled={submitting}>
-            {submitting ? 'Logging in...' : 'Log in'}
-          </button>
-        </form>
-        {error ? <p className="status-message status-error">{error}</p> : null}
+    <main className="auth-page">
+      <section className="auth-shell">
+        <div className="auth-copy">
+          <p className="eyebrow">Private access</p>
+          <h1 className="display-title">Log in to the operations desk.</h1>
+          <p className="body-copy">
+            Internal access for bookings, guest support, and deposit handling.
+          </p>
+        </div>
+
+        <section className="auth-card">
+          <h2>Log in</h2>
+          <form className="auth-form" onSubmit={handleSubmit}>
+            <label className="field">
+              <span>Email</span>
+              <input
+                type="email"
+                placeholder="admin@oneluxstay.com"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                required
+              />
+            </label>
+            <label className="field">
+              <span>Password</span>
+              <input
+                type="password"
+                placeholder="Enter your password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+              />
+            </label>
+            <button className="primary-button" type="submit" disabled={submitting}>
+              {submitting ? 'Logging in...' : 'Continue'}
+            </button>
+          </form>
+          {error ? <p className="status-error">{error}</p> : null}
+        </section>
       </section>
     </main>
   )
