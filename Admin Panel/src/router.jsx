@@ -1,7 +1,8 @@
-import { Navigate, createBrowserRouter } from 'react-router-dom'
+import { createBrowserRouter } from 'react-router-dom'
 import Dashboard from './Dashboard.jsx'
 import HomePage from './HomePage.jsx'
 import Signin from './Signin.jsx'
+import Signup from './Signup.jsx'
 import ProtectedRoute from './ProtectedRoute.jsx'
 
 export const router = createBrowserRouter([
@@ -11,7 +12,7 @@ export const router = createBrowserRouter([
   },
   {
     path: '/signup',
-    element: <Navigate to="/signin" replace />,
+    element: <Signup />,
   },
   {
     path: '/signin',

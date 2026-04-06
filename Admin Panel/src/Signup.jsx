@@ -2,12 +2,6 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from './authContext.jsx'
 
-const onboardingNotes = [
-  'Create access for your operations team',
-  'Store name details safely in Supabase',
-  'Move straight into the admin dashboard after approval',
-]
-
 function Signup() {
   const navigate = useNavigate()
   const { supabase } = useAuth()
@@ -54,28 +48,10 @@ function Signup() {
   }
 
   return (
-    <main className="auth-shell">
-      <section className="auth-showcase">
-        <p className="eyebrow">TEAM ACCESS</p>
-        <h1 className="hero-title">Create a polished back office for every stay.</h1>
-        <p className="hero-text">
-          Set up an admin account for reservations, guest care, and property
-          visibility across the ONELUXSTAY portfolio.
-        </p>
-        <ul className="detail-list">
-          {onboardingNotes.map((note) => (
-            <li key={note}>{note}</li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="auth-card">
-        <div className="auth-card-header">
-          <p className="card-kicker">Admin onboarding</p>
-          <h2>Sign up</h2>
-          <p>Create your admin account.</p>
-        </div>
-
+    <main className="minimal-shell">
+      <section className="minimal-panel minimal-panel-form">
+        <p className="eyebrow">ADMIN ONLY</p>
+        <h1 className="minimal-title">Sign up</h1>
         <form className="auth-form" onSubmit={handleSubmit}>
           <label className="field">
             <span>Full name</span>
@@ -117,7 +93,7 @@ function Signup() {
         {message ? <p className="status-message status-success">{message}</p> : null}
 
         <p className="auth-footer">
-          Already have an account? <Link to="/signin">Sign in</Link>
+          <Link to="/signin">Back to log in</Link>
         </p>
       </section>
     </main>
