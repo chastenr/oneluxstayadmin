@@ -1,5 +1,8 @@
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from './authContext.jsx'
+
+const apiBase = import.meta.env.VITE_API_BASE || '/.netlify/functions'
 
 const suggestedQuestions = [
   'Latest booking',
@@ -24,20 +27,80 @@ const overviewCards = [
   },
   {
     title: 'Deposits',
-    value: 'Needs Stripe mapping',
-    note: 'Guesty can answer booking questions, but deposit logic still needs Stripe data.',
+    value: 'Ops follow-up',
+    note: 'Ask the concierge what still needs manual review.',
     linkLabel: 'Ask about deposits',
     preset: 'Which deposits need action?',
   },
 ]
 
+async function readJsonResponse(response) {
+  const text = await response.text()
+
+  if (!text) {
+    throw new Error('The server returned an empty response.')
+  }
+
+  try {
+    return JSON.parse(text)
+  } catch {
+    if (text.startsWith('<!doctype html') || text.startsWith('<html')) {
+      throw new Error(
+        'The AI function is not running on this URL yet. If you are testing locally, use Netlify Dev or deploy the site first.'
+      )
+    }
+
+    throw new Error(text)
+  }
+}
+
 function Dashboard() {
   const navigate = useNavigate()
   const { user, supabase } = useAuth()
+  const [question, setQuestion] = useState('')
+  const [answer, setAnswer] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
   async function handleSignOut() {
     await supabase.auth.signOut()
     navigate('/signin', { replace: true })
+  }
+
+  async function askAssistant(customQuestion) {
+    const finalQuestion = (customQuestion ?? question).trim()
+
+    if (!finalQuestion) {
+      setError('Type a question first.')
+      return
+    }
+
+    setLoading(true)
+    setError('')
+    setAnswer('')
+    setQuestion(finalQuestion)
+
+    try {
+      const response = await fetch(`${apiBase}/guesty-assistant`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ question: finalQuestion }),
+      })
+
+      const data = await readJsonResponse(response)
+
+      if (!response.ok) {
+        throw new Error(data.error ?? 'Unable to reach the assistant.')
+      }
+
+      setAnswer(data.answer ?? 'No answer returned.')
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -61,8 +124,7 @@ function Dashboard() {
           <p className="eyebrow">Internal assistant</p>
           <h2 className="display-title">Simple, calm, and ready for live ops.</h2>
           <p className="body-copy">
-            The chat shell is still here, but the backend connection has been removed so you can
-            set it up again cleanly.
+            Ask about the latest booking, arrivals, or booking status from Guesty.
           </p>
           <Link className="secondary-link" to="/bookings/latest">
             Open latest booking feed
@@ -75,20 +137,20 @@ function Dashboard() {
               <p className="eyebrow">Assistant</p>
               <h2>How can I help?</h2>
             </div>
-            <span className="status-pill">Disconnected</span>
+            <span className="status-pill">{loading ? 'Asking' : 'AI live'}</span>
           </div>
 
           <div className="concierge-message">
             <p className="chat-role">System</p>
             <p>
-              Backend integration has been removed from this project. Reconnect your own API
-              or deployment flow when you are ready.
+              This assistant uses a serverless function to read the latest Guesty reservation
+              and answer concise operational questions.
             </p>
           </div>
 
           <div className="prompt-grid">
             {suggestedQuestions.map((item) => (
-              <button key={item} type="button">
+              <button key={item} type="button" onClick={() => askAssistant(item)}>
                 {item}
               </button>
             ))}
@@ -99,19 +161,29 @@ function Dashboard() {
             <textarea
               id="assistant-question"
               rows="5"
-              value=""
-              onChange={() => {}}
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
               placeholder="Ask about bookings, arrivals, deposits, or this page..."
-              readOnly
             />
           </label>
 
           <div className="composer-row">
-            <button className="primary-button" type="button">
-              Send
+            <button className="primary-button" type="button" onClick={() => askAssistant()}>
+              {loading ? 'Sending...' : 'Send'}
             </button>
-            <p className="helper-copy">Reconnect your backend when you are ready to enable AI.</p>
+            <p className="helper-copy">
+              Runs through <code>{`${apiBase}/guesty-assistant`}</code>.
+            </p>
           </div>
+
+          {answer ? (
+            <div className="concierge-message concierge-message-answer">
+              <p className="chat-role">Answer</p>
+              <p>{answer}</p>
+            </div>
+          ) : null}
+
+          {error ? <p className="status-error">{error}</p> : null}
         </section>
       </section>
 
@@ -134,7 +206,11 @@ function Dashboard() {
                   {card.linkLabel}
                 </Link>
               ) : (
-                <button className="secondary-link" type="button">
+                <button
+                  className="secondary-link"
+                  type="button"
+                  onClick={() => askAssistant(card.preset)}
+                >
                   {card.linkLabel}
                 </button>
               )}

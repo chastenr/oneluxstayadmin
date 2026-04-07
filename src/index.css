@@ -301,6 +301,12 @@ h2 {
   border: 1px solid rgba(134, 109, 82, 0.12);
 }
 
+.concierge-message-answer {
+  background:
+    radial-gradient(circle at top right, rgba(184, 207, 230, 0.14), transparent 35%),
+    #fffdfa;
+}
+
 .chat-role {
   text-transform: uppercase;
   letter-spacing: 0.16em;
@@ -351,6 +357,34 @@ h2 {
   font-size: clamp(1.6rem, 3vw, 2.2rem);
   line-height: 0.98;
   letter-spacing: -0.04em;
+}
+
+.booking-detail-list {
+  display: grid;
+  gap: 12px;
+}
+
+.booking-detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(134, 109, 82, 0.12);
+}
+
+.booking-detail-row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.booking-detail-row span {
+  color: var(--muted);
+}
+
+.booking-detail-row strong {
+  color: var(--text);
+  text-align: right;
 }
 
 @media (max-width: 900px) {
