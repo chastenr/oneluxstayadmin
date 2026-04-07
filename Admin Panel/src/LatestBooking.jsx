@@ -1,27 +1,68 @@
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from './authContext.jsx'
 
 function LatestBooking() {
   const navigate = useNavigate()
   const { user, supabase } = useAuth()
+  const [booking, setBooking] = useState(null)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
 
   async function handleSignOut() {
     await supabase.auth.signOut()
     navigate('/signin', { replace: true })
   }
 
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadLatestBooking() {
+      setLoading(true)
+      setError('')
+
+      try {
+        const response = await fetch('/.netlify/functions/guesty-latest-booking')
+        const data = await response.json()
+
+        if (!response.ok) {
+          throw new Error(data.error ?? 'Unable to load the latest booking.')
+        }
+
+        if (!isMounted) {
+          return
+        }
+
+        setBooking(data.booking ?? null)
+      } catch (requestError) {
+        if (!isMounted) {
+          return
+        }
+
+        setError(requestError.message)
+      } finally {
+        if (isMounted) {
+          setLoading(false)
+        }
+      }
+    }
+
+    loadLatestBooking()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
   return (
-    <main className="workspace-page">
-      <header className="workspace-topbar">
+    <main className="concierge-page">
+      <header className="concierge-topbar">
         <div>
           <p className="eyebrow">Latest booking</p>
-          <h1 className="workspace-title">Booking feed placeholder.</h1>
-          <p className="body-copy">
-            This page will show the newest reservation once Guesty is connected.
-          </p>
+          <h1 className="concierge-title">Guesty reservation feed.</h1>
         </div>
 
-        <div className="workspace-actions">
+        <div className="concierge-topbar-actions">
           <span className="user-chip">{user?.email ?? 'unknown user'}</span>
           <button className="ghost-button" type="button" onClick={handleSignOut}>
             Sign out
@@ -29,32 +70,66 @@ function LatestBooking() {
         </div>
       </header>
 
-      <section className="workspace-grid">
-        <section className="info-panel">
-          <div className="panel-header">
+      <section className="concierge-layout">
+        <section className="concierge-card">
+          <div className="concierge-card-header">
             <div>
-              <p className="eyebrow">Current state</p>
-              <h2>No live booking yet</h2>
+              <p className="eyebrow">Reservation</p>
+              <h2>Newest booking</h2>
             </div>
-            <span className="status-pill status-pending">Waiting</span>
+            <span className="status-pill status-pending">{loading ? 'Loading' : 'Guesty'}</span>
           </div>
-          <p className="body-copy">
-            Guesty is not connected, so there is no reservation data to display here yet.
-          </p>
-        </section>
 
-        <aside className="side-stack">
-          <section className="info-panel">
-            <div className="panel-header">
-              <div>
-                <p className="eyebrow">Back</p>
-                <h2>Assistant</h2>
+          {booking ? (
+            <div className="booking-detail-list">
+              <div className="booking-detail-row">
+                <span>Guest</span>
+                <strong>{booking.guestName}</strong>
+              </div>
+              <div className="booking-detail-row">
+                <span>Listing</span>
+                <strong>{booking.listingName}</strong>
+              </div>
+              <div className="booking-detail-row">
+                <span>Status</span>
+                <strong>{booking.status}</strong>
+              </div>
+              <div className="booking-detail-row">
+                <span>Source</span>
+                <strong>{booking.source}</strong>
+              </div>
+              <div className="booking-detail-row">
+                <span>Check-in</span>
+                <strong>{booking.checkIn || 'Unknown'}</strong>
+              </div>
+              <div className="booking-detail-row">
+                <span>Check-out</span>
+                <strong>{booking.checkOut || 'Unknown'}</strong>
+              </div>
+              <div className="booking-detail-row">
+                <span>Confirmation</span>
+                <strong>{booking.confirmationCode}</strong>
               </div>
             </div>
-            <Link className="secondary-link" to="/dashboard">
-              Return to assistant
-            </Link>
-          </section>
+          ) : null}
+
+          {!loading && !booking && !error ? (
+            <p className="body-copy">No booking was returned from Guesty.</p>
+          ) : null}
+
+          {error ? <p className="status-error">{error}</p> : null}
+        </section>
+
+        <aside className="concierge-copy">
+          <p className="eyebrow">Next step</p>
+          <h2 className="display-title">Use this as the live booking source.</h2>
+          <p className="body-copy">
+            This page now calls a Netlify function that requests the newest reservation from
+            Guesty using server-side credentials.
+          </p>
+          <Link className="secondary-link" to="/dashboard">
+            Back to assistant
+          </Link>
         </aside>
       </section>
     </main>

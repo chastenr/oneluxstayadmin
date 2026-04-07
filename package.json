@@ -1,0 +1,8 @@
+{
+  "name": "oneluxstayadmin",
+  "private": true,
+  "scripts": {
+    "dev": "netlify dev",
+    "dev:app": "npm run dev --prefix \"Admin Panel\""
+  }
+}
