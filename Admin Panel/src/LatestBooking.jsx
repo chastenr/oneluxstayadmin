@@ -1,58 +1,14 @@
-import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from './authContext.jsx'
 
 function LatestBooking() {
   const navigate = useNavigate()
   const { user, supabase } = useAuth()
-  const [booking, setBooking] = useState(null)
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(true)
 
   async function handleSignOut() {
     await supabase.auth.signOut()
     navigate('/signin', { replace: true })
   }
-
-  useEffect(() => {
-    let isMounted = true
-
-    async function loadLatestBooking() {
-      setLoading(true)
-      setError('')
-
-      try {
-        const response = await fetch('/.netlify/functions/guesty-latest-booking')
-        const data = await response.json()
-
-        if (!response.ok) {
-          throw new Error(data.error ?? 'Unable to load the latest booking.')
-        }
-
-        if (!isMounted) {
-          return
-        }
-
-        setBooking(data.booking ?? null)
-      } catch (requestError) {
-        if (!isMounted) {
-          return
-        }
-
-        setError(requestError.message)
-      } finally {
-        if (isMounted) {
-          setLoading(false)
-        }
-      }
-    }
-
-    loadLatestBooking()
-
-    return () => {
-      isMounted = false
-    }
-  }, [])
 
   return (
     <main className="concierge-page">
@@ -75,57 +31,23 @@ function LatestBooking() {
           <div className="concierge-card-header">
             <div>
               <p className="eyebrow">Reservation</p>
-              <h2>Newest booking</h2>
+              <h2>Latest booking feed</h2>
             </div>
-            <span className="status-pill status-pending">{loading ? 'Loading' : 'Guesty'}</span>
+            <span className="status-pill status-pending">Disconnected</span>
           </div>
 
-          {booking ? (
-            <div className="booking-detail-list">
-              <div className="booking-detail-row">
-                <span>Guest</span>
-                <strong>{booking.guestName}</strong>
-              </div>
-              <div className="booking-detail-row">
-                <span>Listing</span>
-                <strong>{booking.listingName}</strong>
-              </div>
-              <div className="booking-detail-row">
-                <span>Status</span>
-                <strong>{booking.status}</strong>
-              </div>
-              <div className="booking-detail-row">
-                <span>Source</span>
-                <strong>{booking.source}</strong>
-              </div>
-              <div className="booking-detail-row">
-                <span>Check-in</span>
-                <strong>{booking.checkIn || 'Unknown'}</strong>
-              </div>
-              <div className="booking-detail-row">
-                <span>Check-out</span>
-                <strong>{booking.checkOut || 'Unknown'}</strong>
-              </div>
-              <div className="booking-detail-row">
-                <span>Confirmation</span>
-                <strong>{booking.confirmationCode}</strong>
-              </div>
-            </div>
-          ) : null}
-
-          {!loading && !booking && !error ? (
-            <p className="body-copy">No booking was returned from Guesty.</p>
-          ) : null}
-
-          {error ? <p className="status-error">{error}</p> : null}
+          <p className="body-copy">
+            Live booking sync has been removed from this project for now. Reconnect your own
+            backend when you are ready to restore this page.
+          </p>
         </section>
 
         <aside className="concierge-copy">
           <p className="eyebrow">Next step</p>
-          <h2 className="display-title">Use this as the live booking source.</h2>
+          <h2 className="display-title">Rebuild the booking connection your way.</h2>
           <p className="body-copy">
-            This page now calls a Netlify function that requests the newest reservation from
-            Guesty using server-side credentials.
+            The UI is still here, but the deployment and server-side booking feed have been
+            intentionally removed.
           </p>
           <Link className="secondary-link" to="/dashboard">
             Back to assistant
