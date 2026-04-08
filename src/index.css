@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   --bg: #f6f2eb;
   --bg-soft: #fbf8f3;
@@ -14,7 +18,7 @@
   --radius-lg: 22px;
   --radius-md: 16px;
   --font-display: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
-  --font-body: 'Avenir Next', 'Segoe UI', sans-serif;
+  --font-body: 'Inter', 'Segoe UI', sans-serif;
   color: var(--text);
   font-family: var(--font-body);
   background:
