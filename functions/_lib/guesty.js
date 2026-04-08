@@ -5,6 +5,7 @@ const GUESTY_AUTH_URL = 'https://open-api.guesty.com/oauth2/token'
 const DEFAULT_RESERVATION_CACHE_MS = 30 * 1000
 const DEFAULT_GUESTY_TIMEOUT_MS = 5000
 const DEFAULT_GUESTY_AUTH_ATTEMPTS = 2
+const MAX_GUESTY_RETRY_DELAY_MS = 3000
 
 let cachedToken = null
 let cachedTokenExpiresAt = 0
@@ -68,10 +69,10 @@ function getRetryDelayMs(response, attempt) {
   const retryAfterSeconds = Number(retryAfterHeader)
 
   if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
-    return retryAfterSeconds * 1000
+    return Math.min(retryAfterSeconds * 1000, MAX_GUESTY_RETRY_DELAY_MS)
   }
 
-  return Math.min(1000 * 2 ** attempt, 5000)
+  return Math.min(1000 * 2 ** attempt, MAX_GUESTY_RETRY_DELAY_MS)
 }
 
 function getGuestyCredentials() {
