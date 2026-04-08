@@ -39,7 +39,12 @@ export const handler = async () => {
       getHandlerTimeoutMs(),
       'Guesty latest-booking handler'
     )
-    const booking = recentBookings[0] || null
+    const booking =
+      recentBookings[0] ||
+      (await withHardTimeout(
+        getLatestReservation(),
+        getHandlerTimeoutMs(),
+        'Guesty latest-booking handler'
       ))
 
     return {
