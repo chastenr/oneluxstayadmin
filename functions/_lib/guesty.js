@@ -3,17 +3,22 @@
 const GUESTY_OPEN_API_BASE = 'https://open-api.guesty.com/v1'
 const GUESTY_AUTH_URL = 'https://open-api.guesty.com/oauth2/token'
 const DEFAULT_RESERVATION_CACHE_MS = 30 * 1000
+const DEFAULT_GUESTY_REQUEST_INTERVAL_MS = 1000
 const DEFAULT_GUESTY_TIMEOUT_MS = 5000
 const DEFAULT_GUESTY_AUTH_ATTEMPTS = 2
+const DEFAULT_GUESTY_DATA_ATTEMPTS = 3
 const MAX_GUESTY_RETRY_DELAY_MS = 3000
 
 let cachedToken = null
 let cachedTokenExpiresAt = 0
 let inFlightTokenPromise = null
+let lastGuestyRequestAt = 0
+let guestyRequestQueue = Promise.resolve()
 let cachedLatestReservation = null
 let cachedLatestReservationAt = 0
 let cachedRecentReservations = []
 let cachedRecentReservationsAt = 0
+let inFlightRecentReservationsPromise = null
 
 export function getCachedReservationSnapshot() {
   return {
@@ -44,6 +49,16 @@ function getGuestyTimeoutMs() {
   return DEFAULT_GUESTY_TIMEOUT_MS
 }
 
+function getGuestyRequestIntervalMs() {
+  const configuredMs = Number(process.env.GUESTY_MIN_INTERVAL_MS)
+
+  if (Number.isFinite(configuredMs) && configuredMs > 0) {
+    return configuredMs
+  }
+
+  return DEFAULT_GUESTY_REQUEST_INTERVAL_MS
+}
+
 function getGuestyAuthAttempts() {
   const configuredAttempts = Number(process.env.GUESTY_AUTH_ATTEMPTS)
 
@@ -54,6 +69,16 @@ function getGuestyAuthAttempts() {
   return DEFAULT_GUESTY_AUTH_ATTEMPTS
 }
 
+function getGuestyDataAttempts() {
+  const configuredAttempts = Number(process.env.GUESTY_DATA_ATTEMPTS)
+
+  if (Number.isInteger(configuredAttempts) && configuredAttempts > 0) {
+    return configuredAttempts
+  }
+
+  return DEFAULT_GUESTY_DATA_ATTEMPTS
+}
+
 function getReservationCacheMs() {
   const configuredMs = Number(process.env.GUESTY_MIN_INTERVAL_MS)
 
@@ -62,6 +87,23 @@ function getReservationCacheMs() {
   }
 
   return DEFAULT_RESERVATION_CACHE_MS
+}
+
+async function rateLimitedGuestyCall(fn) {
+  const runCall = async () => {
+    const waitMs = Math.max(0, getGuestyRequestIntervalMs() - (Date.now() - lastGuestyRequestAt))
+
+    if (waitMs > 0) {
+      await sleep(waitMs)
+    }
+
+    lastGuestyRequestAt = Date.now()
+    return fn()
+  }
+
+  const queuedCall = guestyRequestQueue.then(runCall, runCall)
+  guestyRequestQueue = queuedCall.catch(() => {})
+  return queuedCall
 }
 
 function getRetryDelayMs(response, attempt) {
@@ -141,18 +183,20 @@ async function fetchGuestyAccessToken() {
       body.set('client_id', clientId)
       body.set('client_secret', clientSecret)
 
-      const response = await fetchWithTimeout(
-        GUESTY_AUTH_URL,
-        {
-          method: 'POST',
-          headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/x-www-form-urlencoded',
+      const response = await rateLimitedGuestyCall(() =>
+        fetchWithTimeout(
+          GUESTY_AUTH_URL,
+          {
+            method: 'POST',
+            headers: {
+              Accept: 'application/json',
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body,
           },
-          body,
-        },
-        timeoutMs,
-        'Guesty auth request'
+          timeoutMs,
+          'Guesty auth request'
+        )
       )
 
       if (response.ok) {
@@ -187,42 +231,54 @@ function clearCachedToken() {
 }
 
 async function fetchGuestyJson(path, token) {
-  const response = await fetchWithTimeout(
-    `${GUESTY_OPEN_API_BASE}${path}`,
-    {
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${token}`,
+  const response = await rateLimitedGuestyCall(() =>
+    fetchWithTimeout(
+      `${GUESTY_OPEN_API_BASE}${path}`,
+      {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
       },
-    },
-    getGuestyTimeoutMs(),
-    'Guesty API request'
+      getGuestyTimeoutMs(),
+      'Guesty API request'
+    )
   )
 
-  if (response.ok) {
-    return response.json()
-  }
-
-  const errorText = await response.text()
-  const error = new Error(`Guesty request failed: ${response.status} ${errorText}`)
-  error.statusCode = response.status
-  throw error
+  return response
 }
 
 async function guestyRequest(path) {
-  const token = await fetchGuestyAccessToken()
+  let token = await fetchGuestyAccessToken()
+  let hasRefreshedToken = false
+  const maxAttempts = getGuestyDataAttempts()
 
-  try {
-    return await fetchGuestyJson(path, token)
-  } catch (error) {
-    if (error.statusCode === 401) {
-      clearCachedToken()
-      const refreshedToken = await fetchGuestyAccessToken()
-      return fetchGuestyJson(path, refreshedToken)
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const response = await fetchGuestyJson(path, token)
+
+    if (response.ok) {
+      return response.json()
     }
 
+    if (response.status === 401 && !hasRefreshedToken) {
+      clearCachedToken()
+      token = await fetchGuestyAccessToken()
+      hasRefreshedToken = true
+      continue
+    }
+
+    if (response.status === 429 && attempt < maxAttempts - 1) {
+      await sleep(getRetryDelayMs(response, attempt))
+      continue
+    }
+
+    const errorText = await response.text()
+    const error = new Error(`Guesty request failed: ${response.status} ${errorText}`)
+    error.statusCode = response.status
     throw error
   }
+
+  throw new Error('Guesty request failed after multiple retries.')
 }
 
 function normalizeReservation(reservation) {
@@ -302,20 +358,34 @@ export async function getRecentReservations(limit = 10) {
     return cachedRecentReservations.slice(0, limit)
   }
 
-  try {
+  if (inFlightRecentReservationsPromise) {
+    const reservations = await inFlightRecentReservationsPromise
+    return reservations.slice(0, limit)
+  }
+
+  inFlightRecentReservationsPromise = (async () => {
     const requestLimit = Math.max(limit, 10)
     const data = await guestyRequest(`/reservations?limit=${requestLimit}&sort=-createdAt`)
-    cachedRecentReservations = parseReservations(data)
+    const reservations = parseReservations(data)
+
+    cachedRecentReservations = reservations
     cachedRecentReservationsAt = Date.now()
-    cachedLatestReservation = cachedRecentReservations[0] || null
+    cachedLatestReservation = reservations[0] || null
     cachedLatestReservationAt = cachedRecentReservationsAt
-    return cachedRecentReservations.slice(0, limit)
+    return reservations
+  })()
+
+  try {
+    const reservations = await inFlightRecentReservationsPromise
+    return reservations.slice(0, limit)
   } catch (error) {
-    if (error.statusCode === 429 && cachedRecentReservations.length) {
+    if (cachedRecentReservations.length) {
       return cachedRecentReservations.slice(0, limit)
     }
 
     throw error
+  } finally {
+    inFlightRecentReservationsPromise = null
   }
 }
 
