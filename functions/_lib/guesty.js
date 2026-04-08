@@ -1,8 +1,39 @@
 const GUESTY_OPEN_API_BASE = 'https://open-api.guesty.com/v1'
 const GUESTY_AUTH_URL = 'https://open-api.guesty.com/oauth2/token'
+const DEFAULT_RESERVATION_CACHE_MS = 30 * 1000
 
 let cachedToken = null
 let cachedTokenExpiresAt = 0
+let inFlightTokenPromise = null
+let cachedLatestReservation = null
+let cachedLatestReservationAt = 0
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
+
+function getReservationCacheMs() {
+  const configuredMs = Number(process.env.GUESTY_MIN_INTERVAL_MS)
+
+  if (Number.isFinite(configuredMs) && configuredMs > 0) {
+    return configuredMs
+  }
+
+  return DEFAULT_RESERVATION_CACHE_MS
+}
+
+function getRetryDelayMs(response, attempt) {
+  const retryAfterHeader = response.headers.get('retry-after')
+  const retryAfterSeconds = Number(retryAfterHeader)
+
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+    return retryAfterSeconds * 1000
+  }
+
+  return Math.min(1000 * 2 ** attempt, 5000)
+}
 
 function getGuestyCredentials() {
   const clientId =
@@ -34,36 +65,61 @@ async function fetchGuestyAccessToken() {
     return cachedToken
   }
 
-  const { clientId, clientSecret } = getGuestyCredentials()
-  const body = new URLSearchParams()
-  body.set('grant_type', 'client_credentials')
-  body.set('scope', 'open-api')
-  body.set('client_id', clientId)
-  body.set('client_secret', clientSecret)
-
-  const response = await fetch(GUESTY_AUTH_URL, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body,
-  })
-
-  if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`Guesty auth failed: ${response.status} ${errorText}`)
+  if (inFlightTokenPromise) {
+    return inFlightTokenPromise
   }
 
-  const data = await response.json()
-  cachedToken = data.access_token
-  cachedTokenExpiresAt = Date.now() + Math.max((data.expires_in || 3600) - 60, 60) * 1000
+  inFlightTokenPromise = (async () => {
+    const { clientId, clientSecret } = getGuestyCredentials()
 
-  return cachedToken
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const body = new URLSearchParams()
+      body.set('grant_type', 'client_credentials')
+      body.set('scope', 'open-api')
+      body.set('client_id', clientId)
+      body.set('client_secret', clientSecret)
+
+      const response = await fetch(GUESTY_AUTH_URL, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body,
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        cachedToken = data.access_token
+        cachedTokenExpiresAt = Date.now() + Math.max((data.expires_in || 3600) - 60, 60) * 1000
+        return cachedToken
+      }
+
+      if (response.status === 429 && attempt < 2) {
+        await sleep(getRetryDelayMs(response, attempt))
+        continue
+      }
+
+      const errorText = await response.text()
+      throw new Error(`Guesty auth failed: ${response.status} ${errorText}`)
+    }
+
+    throw new Error('Guesty auth failed after multiple retries.')
+  })()
+
+  try {
+    return await inFlightTokenPromise
+  } finally {
+    inFlightTokenPromise = null
+  }
 }
 
-async function guestyRequest(path) {
-  const token = await fetchGuestyAccessToken()
+function clearCachedToken() {
+  cachedToken = null
+  cachedTokenExpiresAt = 0
+}
+
+async function fetchGuestyJson(path, token) {
   const response = await fetch(`${GUESTY_OPEN_API_BASE}${path}`, {
     headers: {
       Accept: 'application/json',
@@ -71,12 +127,30 @@ async function guestyRequest(path) {
     },
   })
 
-  if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`Guesty request failed: ${response.status} ${errorText}`)
+  if (response.ok) {
+    return response.json()
   }
 
-  return response.json()
+  const errorText = await response.text()
+  const error = new Error(`Guesty request failed: ${response.status} ${errorText}`)
+  error.statusCode = response.status
+  throw error
+}
+
+async function guestyRequest(path) {
+  const token = await fetchGuestyAccessToken()
+
+  try {
+    return await fetchGuestyJson(path, token)
+  } catch (error) {
+    if (error.statusCode === 401) {
+      clearCachedToken()
+      const refreshedToken = await fetchGuestyAccessToken()
+      return fetchGuestyJson(path, refreshedToken)
+    }
+
+    throw error
+  }
 }
 
 function normalizeReservation(reservation) {
@@ -137,10 +211,26 @@ function normalizeReservation(reservation) {
 }
 
 export async function getLatestReservation() {
-  const data = await guestyRequest('/reservations?limit=1&sort=-createdAt')
-  const reservations = Array.isArray(data)
-    ? data
-    : data.results || data.reservations || data.data || []
+  const cacheMs = getReservationCacheMs()
 
-  return normalizeReservation(reservations[0] || null)
+  if (cachedLatestReservation && Date.now() - cachedLatestReservationAt < cacheMs) {
+    return cachedLatestReservation
+  }
+
+  try {
+    const data = await guestyRequest('/reservations?limit=1&sort=-createdAt')
+    const reservations = Array.isArray(data)
+      ? data
+      : data.results || data.reservations || data.data || []
+
+    cachedLatestReservation = normalizeReservation(reservations[0] || null)
+    cachedLatestReservationAt = Date.now()
+    return cachedLatestReservation
+  } catch (error) {
+    if (error.statusCode === 429 && cachedLatestReservation) {
+      return cachedLatestReservation
+    }
+
+    throw error
+  }
 }
