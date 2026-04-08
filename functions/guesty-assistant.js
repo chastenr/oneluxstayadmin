@@ -1,4 +1,4 @@
-const { getLatestReservation } = require('./_lib/guesty')
+import { getLatestReservation } from './_lib/guesty.js'
 
 function buildAssistantReply(question, booking) {
   if (!booking) {
@@ -89,7 +89,7 @@ async function askOpenAI(question, booking) {
   return getResponseText(data)
 }
 
-exports.handler = async (event) => {
+export const handler = async (event) => {
   try {
     const body = event.httpMethod === 'POST' ? JSON.parse(event.body || '{}') : {}
     const question = String(body.question || '').trim()

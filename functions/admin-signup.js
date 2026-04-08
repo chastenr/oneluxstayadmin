@@ -1,4 +1,4 @@
-const { createClient } = require('@supabase/supabase-js')
+import { createClient } from '@supabase/supabase-js'
 const SUPERADMIN_ROLE_NAMES = new Set(['superadmin', 'super_admin', 'super-admin'])
 
 function normalizeValue(value) {
@@ -104,7 +104,7 @@ async function getRequesterUser(event, supabaseAdmin) {
   }
 }
 
-exports.handler = async (event) => {
+export const handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return json(405, { error: 'Method not allowed.' })
   }

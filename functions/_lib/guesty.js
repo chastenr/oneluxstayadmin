@@ -136,15 +136,11 @@ function normalizeReservation(reservation) {
   }
 }
 
-async function getLatestReservation() {
+export async function getLatestReservation() {
   const data = await guestyRequest('/reservations?limit=1&sort=-createdAt')
   const reservations = Array.isArray(data)
     ? data
     : data.results || data.reservations || data.data || []
 
   return normalizeReservation(reservations[0] || null)
-}
-
-module.exports = {
-  getLatestReservation,
 }

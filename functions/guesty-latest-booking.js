@@ -1,6 +1,6 @@
-const { getLatestReservation } = require('./_lib/guesty')
+import { getLatestReservation } from './_lib/guesty.js'
 
-exports.handler = async () => {
+export const handler = async () => {
   try {
     const booking = await getLatestReservation()
 
