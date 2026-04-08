@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from './authContext.jsx'
+import { fetchGuestySummary } from './lib/guestySummary.js'
 import {
   adminNavigation,
   buildExecutiveDashboardData,
@@ -159,26 +160,6 @@ function saveCachedSummary(summary) {
   window.localStorage.setItem(summaryStorageKey, JSON.stringify(summary))
 }
 
-async function readJsonResponse(response) {
-  const text = await response.text()
-
-  if (!text) {
-    throw new Error('The server returned an empty response.')
-  }
-
-  try {
-    return JSON.parse(text)
-  } catch {
-    if (text.startsWith('<!doctype html') || text.startsWith('<html')) {
-      throw new Error(
-        'The function is not running on this URL yet. If you are testing locally, use Netlify Dev or deploy the site first.'
-      )
-    }
-
-    throw new Error(text)
-  }
-}
-
 function Dashboard() {
   const navigate = useNavigate()
   const { user, supabase, isSuperAdmin } = useAuth()
@@ -232,12 +213,7 @@ function Dashboard() {
       setSyncError('')
 
       try {
-        const response = await fetch(`${apiBase}/guesty-latest-booking`)
-        const data = await readJsonResponse(response)
-
-        if (!response.ok) {
-          throw new Error(data.error ?? 'Unable to load the executive summary.')
-        }
+        const data = await fetchGuestySummary()
 
         if (!isMounted) {
           return
@@ -371,7 +347,24 @@ function Dashboard() {
         body: JSON.stringify({ question: finalQuestion }),
       })
 
-      const data = await readJsonResponse(response)
+      const text = await response.text()
+      let data
+
+      if (!text) {
+        throw new Error('The server returned an empty response.')
+      }
+
+      try {
+        data = JSON.parse(text)
+      } catch {
+        if (text.startsWith('<!doctype html') || text.startsWith('<html')) {
+          throw new Error(
+            'The function is not running on this URL yet. If you are testing locally, use Netlify Dev or deploy the site first.'
+          )
+        }
+
+        throw new Error(text)
+      }
 
       if (!response.ok) {
         throw new Error(data.error ?? 'Unable to reach the assistant.')

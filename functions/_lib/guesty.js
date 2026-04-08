@@ -3,7 +3,8 @@
 const GUESTY_OPEN_API_BASE = 'https://open-api.guesty.com/v1'
 const GUESTY_AUTH_URL = 'https://open-api.guesty.com/oauth2/token'
 const DEFAULT_RESERVATION_CACHE_MS = 30 * 1000
-const DEFAULT_GUESTY_TIMEOUT_MS = 8000
+const DEFAULT_GUESTY_TIMEOUT_MS = 5000
+const DEFAULT_GUESTY_AUTH_ATTEMPTS = 2
 
 let cachedToken = null
 let cachedTokenExpiresAt = 0
@@ -12,6 +13,19 @@ let cachedLatestReservation = null
 let cachedLatestReservationAt = 0
 let cachedRecentReservations = []
 let cachedRecentReservationsAt = 0
+
+export function getCachedReservationSnapshot() {
+  return {
+    booking: cachedLatestReservation,
+    recentBookings: cachedRecentReservations.slice(0, 10),
+    cachedAt:
+      cachedLatestReservationAt || cachedRecentReservationsAt
+        ? new Date(
+            Math.max(cachedLatestReservationAt || 0, cachedRecentReservationsAt || 0)
+          ).toISOString()
+        : null,
+  }
+}
 
 function sleep(ms) {
   return new Promise((resolve) => {
@@ -27,6 +41,16 @@ function getGuestyTimeoutMs() {
   }
 
   return DEFAULT_GUESTY_TIMEOUT_MS
+}
+
+function getGuestyAuthAttempts() {
+  const configuredAttempts = Number(process.env.GUESTY_AUTH_ATTEMPTS)
+
+  if (Number.isInteger(configuredAttempts) && configuredAttempts > 0) {
+    return configuredAttempts
+  }
+
+  return DEFAULT_GUESTY_AUTH_ATTEMPTS
 }
 
 function getReservationCacheMs() {
@@ -107,8 +131,9 @@ async function fetchGuestyAccessToken() {
   inFlightTokenPromise = (async () => {
     const { clientId, clientSecret } = getGuestyCredentials()
     const timeoutMs = getGuestyTimeoutMs()
+    const maxAttempts = getGuestyAuthAttempts()
 
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       const body = new URLSearchParams()
       body.set('grant_type', 'client_credentials')
       body.set('scope', 'open-api')
@@ -136,7 +161,7 @@ async function fetchGuestyAccessToken() {
         return cachedToken
       }
 
-      if (response.status === 429 && attempt < 2) {
+      if (response.status === 429 && attempt < maxAttempts - 1) {
         await sleep(getRetryDelayMs(response, attempt))
         continue
       }

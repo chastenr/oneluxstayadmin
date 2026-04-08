@@ -1,28 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from './authContext.jsx'
-
-const apiBase = import.meta.env.VITE_API_BASE || '/.netlify/functions'
-
-async function readJsonResponse(response) {
-  const text = await response.text()
-
-  if (!text) {
-    throw new Error('The server returned an empty response.')
-  }
-
-  try {
-    return JSON.parse(text)
-  } catch {
-    if (text.startsWith('<!doctype html') || text.startsWith('<html')) {
-      throw new Error(
-        'The latest-booking function is not running on this URL yet. If you are testing locally, use Netlify Dev or deploy the site first.'
-      )
-    }
-
-    throw new Error(text)
-  }
-}
+import { fetchGuestySummary } from './lib/guestySummary.js'
 
 function LatestBooking() {
   const navigate = useNavigate()
@@ -44,12 +23,7 @@ function LatestBooking() {
       setError('')
 
       try {
-        const response = await fetch(`${apiBase}/guesty-latest-booking`)
-        const data = await readJsonResponse(response)
-
-        if (!response.ok) {
-          throw new Error(data.error ?? 'Unable to load the latest booking.')
-        }
+        const data = await fetchGuestySummary()
 
         if (!isMounted) {
           return

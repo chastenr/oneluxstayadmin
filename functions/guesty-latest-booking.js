@@ -1,11 +1,13 @@
-import { getLatestReservation, getRecentReservations } from './_lib/guesty.js'
+import {
+  getCachedReservationSnapshot,
+  getLatestReservation,
+  getRecentReservations,
+} from './_lib/guesty.js'
 
 export const handler = async () => {
   try {
-    const [booking, recentBookings] = await Promise.all([
-      getLatestReservation(),
-      getRecentReservations(10),
-    ])
+    const recentBookings = await getRecentReservations(10)
+    const booking = recentBookings[0] || (await getLatestReservation())
 
     return {
       statusCode: 200,
@@ -16,10 +18,15 @@ export const handler = async () => {
       }),
     }
   } catch (error) {
+    const cachedSnapshot = getCachedReservationSnapshot()
+
     return {
-      statusCode: 500,
+      statusCode: 200,
       body: JSON.stringify({
         connected: false,
+        booking: cachedSnapshot.booking ?? null,
+        recentBookings: cachedSnapshot.recentBookings ?? [],
+        cachedAt: cachedSnapshot.cachedAt,
         error: error.message,
       }),
     }
