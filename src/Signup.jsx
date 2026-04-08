@@ -65,7 +65,7 @@ function Signup() {
               <span>Full name</span>
               <input
                 type="text"
-                placeholder="Chasten Ramirez"
+                placeholder="Please type your first and last name like this"
                 value={fullName}
                 onChange={(event) => setFullName(event.target.value)}
                 required
@@ -75,7 +75,7 @@ function Signup() {
               <span>Email</span>
               <input
                 type="email"
-                placeholder="admin@oneluxstay.com"
+                placeholder="firstname.lastname@oneluxstay.com"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 required
