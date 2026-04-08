@@ -53,13 +53,13 @@ function getResponseText(data) {
 }
 
 async function askOpenAI(question, booking) {
-  const apiKey = process.env.OPENAI_API_KEY
+  const apiKey = String(process.env.OPENAI_API_KEY || '').trim()
 
   if (!apiKey) {
     return null
   }
 
-  const model = process.env.OPENAI_CHAT_MODEL || 'gpt-5-mini'
+  const model = String(process.env.OPENAI_CHAT_MODEL || 'gpt-5-mini').trim() || 'gpt-5-mini'
   const response = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: {
@@ -80,8 +80,9 @@ async function askOpenAI(question, booking) {
   })
 
   if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`OpenAI request failed: ${response.status} ${errorText}`)
+    const error = new Error('OpenAI is unavailable right now.')
+    error.statusCode = response.status
+    throw error
   }
 
   const data = await response.json()
@@ -103,7 +104,14 @@ exports.handler = async (event) => {
     }
 
     const booking = await getLatestReservation()
-    const aiAnswer = await askOpenAI(question, booking)
+    let aiAnswer = null
+    let usedFallback = false
+
+    try {
+      aiAnswer = await askOpenAI(question, booking)
+    } catch {
+      usedFallback = true
+    }
 
     return {
       statusCode: 200,
@@ -111,6 +119,7 @@ exports.handler = async (event) => {
         connected: true,
         answer: aiAnswer || buildAssistantReply(question, booking),
         booking,
+        usedFallback,
       }),
     }
   } catch (error) {
