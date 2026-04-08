@@ -3,6 +3,7 @@
 const GUESTY_OPEN_API_BASE = 'https://open-api.guesty.com/v1'
 const GUESTY_AUTH_URL = 'https://open-api.guesty.com/oauth2/token'
 const DEFAULT_RESERVATION_CACHE_MS = 30 * 1000
+const DEFAULT_GUESTY_TIMEOUT_MS = 8000
 
 let cachedToken = null
 let cachedTokenExpiresAt = 0
@@ -16,6 +17,16 @@ function sleep(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms)
   })
+}
+
+function getGuestyTimeoutMs() {
+  const configuredMs = Number(process.env.GUESTY_TIMEOUT_MS)
+
+  if (Number.isFinite(configuredMs) && configuredMs > 0) {
+    return configuredMs
+  }
+
+  return DEFAULT_GUESTY_TIMEOUT_MS
 }
 
 function getReservationCacheMs() {
@@ -64,6 +75,26 @@ function getGuestyCredentials() {
   return { clientId, clientSecret }
 }
 
+async function fetchWithTimeout(url, options, timeoutMs, timeoutLabel) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    })
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error(`${timeoutLabel} timed out after ${timeoutMs}ms`)
+    }
+
+    throw error
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 async function fetchGuestyAccessToken() {
   if (cachedToken && Date.now() < cachedTokenExpiresAt) {
     return cachedToken
@@ -75,6 +106,7 @@ async function fetchGuestyAccessToken() {
 
   inFlightTokenPromise = (async () => {
     const { clientId, clientSecret } = getGuestyCredentials()
+    const timeoutMs = getGuestyTimeoutMs()
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const body = new URLSearchParams()
@@ -83,14 +115,19 @@ async function fetchGuestyAccessToken() {
       body.set('client_id', clientId)
       body.set('client_secret', clientSecret)
 
-      const response = await fetch(GUESTY_AUTH_URL, {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/x-www-form-urlencoded',
+      const response = await fetchWithTimeout(
+        GUESTY_AUTH_URL,
+        {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body,
         },
-        body,
-      })
+        timeoutMs,
+        'Guesty auth request'
+      )
 
       if (response.ok) {
         const data = await response.json()
@@ -124,12 +161,17 @@ function clearCachedToken() {
 }
 
 async function fetchGuestyJson(path, token) {
-  const response = await fetch(`${GUESTY_OPEN_API_BASE}${path}`, {
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${token}`,
+  const response = await fetchWithTimeout(
+    `${GUESTY_OPEN_API_BASE}${path}`,
+    {
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
     },
-  })
+    getGuestyTimeoutMs(),
+    'Guesty API request'
+  )
 
   if (response.ok) {
     return response.json()

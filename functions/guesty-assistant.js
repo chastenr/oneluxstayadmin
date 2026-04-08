@@ -1,4 +1,7 @@
+/* global process */
+
 import { getLatestReservation } from './_lib/guesty.js'
+const DEFAULT_OPENAI_TIMEOUT_MS = 12000
 
 function buildAssistantReply(question, booking) {
   if (!booking) {
@@ -60,24 +63,41 @@ async function askOpenAI(question, booking) {
   }
 
   const model = String(process.env.OPENAI_CHAT_MODEL || 'gpt-5-mini').trim() || 'gpt-5-mini'
-  const response = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      instructions:
-        'You are the OneLuxStay internal operations assistant. Answer using only the Guesty booking data provided. Be concise, operational, and honest. If the data is missing, say that it is not available yet. Do not invent deposit or payment status unless explicitly provided.',
-      input: `Admin question: ${question}\n\nLatest Guesty booking data:\n${JSON.stringify(
-        booking,
-        null,
-        2
-      )}`,
-      max_output_tokens: 220,
-    }),
-  })
+  const timeoutMs = Number(process.env.OPENAI_TIMEOUT_MS) || DEFAULT_OPENAI_TIMEOUT_MS
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+
+  let response
+
+  try {
+    response = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        instructions:
+          'You are the OneLuxStay internal operations assistant. Answer using only the Guesty booking data provided. Be concise, operational, and honest. If the data is missing, say that it is not available yet. Do not invent deposit or payment status unless explicitly provided.',
+        input: `Admin question: ${question}\n\nLatest Guesty booking data:\n${JSON.stringify(
+          booking,
+          null,
+          2
+        )}`,
+        max_output_tokens: 220,
+      }),
+      signal: controller.signal,
+    })
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error(`OpenAI request timed out after ${timeoutMs}ms`)
+    }
+
+    throw error
+  } finally {
+    clearTimeout(timeout)
+  }
 
   if (!response.ok) {
     const error = new Error('OpenAI is unavailable right now.')
