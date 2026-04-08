@@ -1,3 +1,5 @@
+/* global process */
+
 const GUESTY_OPEN_API_BASE = 'https://open-api.guesty.com/v1'
 const GUESTY_AUTH_URL = 'https://open-api.guesty.com/oauth2/token'
 const DEFAULT_RESERVATION_CACHE_MS = 30 * 1000
@@ -7,6 +9,8 @@ let cachedTokenExpiresAt = 0
 let inFlightTokenPromise = null
 let cachedLatestReservation = null
 let cachedLatestReservationAt = 0
+let cachedRecentReservations = []
+let cachedRecentReservationsAt = 0
 
 function sleep(ms) {
   return new Promise((resolve) => {
@@ -173,6 +177,7 @@ function normalizeReservation(reservation) {
 
   return {
     id: reservation._id || reservation.id || '',
+    createdAt: reservation.createdAt || reservation.createdAtLocalized || '',
     confirmationCode:
       reservation.confirmationCode ||
       reservation.reservationId ||
@@ -210,6 +215,42 @@ function normalizeReservation(reservation) {
   }
 }
 
+function shouldUseRecentReservationCache(cacheMs) {
+  return cachedRecentReservations.length && Date.now() - cachedRecentReservationsAt < cacheMs
+}
+
+function parseReservations(data) {
+  const reservations = Array.isArray(data)
+    ? data
+    : data.results || data.reservations || data.data || []
+
+  return reservations.map(normalizeReservation).filter(Boolean)
+}
+
+export async function getRecentReservations(limit = 10) {
+  const cacheMs = getReservationCacheMs()
+
+  if (shouldUseRecentReservationCache(cacheMs)) {
+    return cachedRecentReservations.slice(0, limit)
+  }
+
+  try {
+    const requestLimit = Math.max(limit, 10)
+    const data = await guestyRequest(`/reservations?limit=${requestLimit}&sort=-createdAt`)
+    cachedRecentReservations = parseReservations(data)
+    cachedRecentReservationsAt = Date.now()
+    cachedLatestReservation = cachedRecentReservations[0] || null
+    cachedLatestReservationAt = cachedRecentReservationsAt
+    return cachedRecentReservations.slice(0, limit)
+  } catch (error) {
+    if (error.statusCode === 429 && cachedRecentReservations.length) {
+      return cachedRecentReservations.slice(0, limit)
+    }
+
+    throw error
+  }
+}
+
 export async function getLatestReservation() {
   const cacheMs = getReservationCacheMs()
 
@@ -217,20 +258,8 @@ export async function getLatestReservation() {
     return cachedLatestReservation
   }
 
-  try {
-    const data = await guestyRequest('/reservations?limit=1&sort=-createdAt')
-    const reservations = Array.isArray(data)
-      ? data
-      : data.results || data.reservations || data.data || []
-
-    cachedLatestReservation = normalizeReservation(reservations[0] || null)
-    cachedLatestReservationAt = Date.now()
-    return cachedLatestReservation
-  } catch (error) {
-    if (error.statusCode === 429 && cachedLatestReservation) {
-      return cachedLatestReservation
-    }
-
-    throw error
-  }
+  const reservations = await getRecentReservations(1)
+  cachedLatestReservation = reservations[0] || null
+  cachedLatestReservationAt = Date.now()
+  return cachedLatestReservation
 }

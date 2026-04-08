@@ -1,30 +1,27 @@
 import {
-  CalendarIcon,
   DashboardIcon,
-  DepositIcon,
-  GuestsIcon,
-  OperationsIcon,
   PaymentIcon,
-  PropertyIcon,
   ReportsIcon,
   ReservationIcon,
-  SettingsIcon,
+  SparklesIcon,
 } from './icons.jsx'
 
 export const adminNavigation = [
   { key: 'dashboard', label: 'Dashboard', icon: DashboardIcon },
-  { key: 'reservations', label: 'Reservations', icon: ReservationIcon },
-  { key: 'calendar', label: 'Calendar', icon: CalendarIcon },
-  { key: 'properties', label: 'Properties', icon: PropertyIcon },
-  { key: 'guests', label: 'Guests', icon: GuestsIcon },
-  { key: 'payments', label: 'Payments', icon: PaymentIcon },
-  { key: 'deposits', label: 'Deposits', icon: DepositIcon },
-  { key: 'operations', label: 'Operations', icon: OperationsIcon },
+  { key: 'bookings', label: 'Bookings', icon: ReservationIcon },
+  { key: 'expenses', label: 'Expenses', icon: PaymentIcon },
+  { key: 'profit', label: 'Profit', icon: ReportsIcon },
   { key: 'reports', label: 'Reports', icon: ReportsIcon },
-  { key: 'settings', label: 'Settings', icon: SettingsIcon },
+  { key: 'assistant', label: 'AI Assistant', icon: SparklesIcon },
 ]
 
-const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+export const expenseCategories = [
+  'Cleaning',
+  'Maintenance',
+  'Utilities',
+  'Supplies',
+  'Other',
+]
 
 function toDate(value) {
   if (!value) {
@@ -33,6 +30,44 @@ function toDate(value) {
 
   const parsed = new Date(value)
   return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+function getPeriodStart(period) {
+  const now = new Date()
+
+  if (period === 'today') {
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  }
+
+  if (period === 'week') {
+    const day = now.getDay()
+    const diff = (day + 6) % 7
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate() - diff)
+  }
+
+  return new Date(now.getFullYear(), now.getMonth(), 1)
+}
+
+function isInPeriod(value, period) {
+  const parsed = toDate(value)
+
+  if (!parsed) {
+    return false
+  }
+
+  return parsed >= getPeriodStart(period)
+}
+
+function isUpcoming(value) {
+  const parsed = toDate(value)
+
+  if (!parsed) {
+    return false
+  }
+
+  const now = new Date()
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  return parsed >= startToday
 }
 
 export function formatDate(value, options = {}) {
@@ -61,85 +96,77 @@ export function formatCurrency(value, currency = 'USD') {
   }).format(value)
 }
 
-function getReservationTone(status) {
+function normalizeStatus(status) {
   const value = String(status || '').toLowerCase()
 
+  if (value.includes('failed') || value.includes('cancel')) {
+    return { label: 'Failed', tone: 'danger' }
+  }
+
   if (value.includes('confirmed') || value.includes('reserved')) {
-    return 'success'
+    return { label: 'Pending', tone: 'warning' }
   }
 
-  if (value.includes('cancel') || value.includes('failed')) {
-    return 'danger'
-  }
-
-  if (value.includes('inquiry') || value.includes('pending')) {
-    return 'warning'
-  }
-
-  return 'neutral'
+  return { label: 'Pending', tone: 'neutral' }
 }
 
-function buildLiveReservation(booking) {
-  if (!booking) {
-    return null
-  }
-
-  return {
-    id: booking.id || 'live-booking',
-    label: 'Live booking',
-    source: booking.source || 'Guesty',
-    guest: booking.guestName || 'Unknown guest',
-    guestEmail: booking.guestEmail || 'Not available yet',
-    property: booking.listingName || 'Unknown property',
-    status: booking.status || 'Unknown',
-    statusTone: getReservationTone(booking.status),
-    checkIn: booking.checkIn || '',
-    checkOut: booking.checkOut || '',
-    amountValue: typeof booking.totalPrice === 'number' ? booking.totalPrice : null,
-    amount: formatCurrency(booking.totalPrice, booking.currency || 'USD'),
-    confirmation: booking.confirmationCode || 'Not available yet',
-    channel: booking.source || 'Guesty',
-    paymentStatus: 'Pending review',
-    paymentTone: 'warning',
-    depositStatus: 'Not mapped',
-    depositTone: 'neutral',
-    note: 'Synced from the latest Guesty reservation.',
-    isLive: true,
-  }
+function sumAmount(rows) {
+  return rows.reduce((total, row) => total + (typeof row.amountValue === 'number' ? row.amountValue : 0), 0)
 }
 
-function createPreviewCalendarRows(liveReservation) {
-  const focusProperty = liveReservation?.property || 'Primary property'
-  const focusLabel = liveReservation ? `${liveReservation.guest}` : 'Awaiting live booking'
+function buildExpenseBreakdown(expenses) {
+  return expenseCategories.map((category) => {
+    const rows = expenses.filter((expense) => expense.category === category)
 
-  return [
-    {
-      id: 'calendar-live',
-      property: focusProperty,
-      blocks: liveReservation
-        ? [{ id: `${liveReservation.id}-stay`, label: focusLabel, day: 2, tone: 'accent' }]
-        : [{ id: 'calendar-empty', label: 'No live block yet', day: 3, tone: 'neutral' }],
-    },
-    {
-      id: 'calendar-hollywood',
-      property: 'Hollywood Suites',
-      blocks: [{ id: 'hold-hollywood', label: 'Owner hold', day: 4, tone: 'warning' }],
-    },
-    {
-      id: 'calendar-beverly',
-      property: 'Beverly Grove Loft',
-      blocks: [{ id: 'cleaning-beverly', label: 'Cleaning block', day: 1, tone: 'neutral' }],
-    },
-  ].map((row) => ({
-    ...row,
-    days: dayLabels,
-  }))
+    return {
+      category,
+      totalValue: sumAmount(rows),
+      total: formatCurrency(sumAmount(rows)),
+      count: rows.length,
+    }
+  })
 }
 
-export function buildAdminData(booking, bookingError) {
-  const liveReservation = buildLiveReservation(booking)
-  const reservations = liveReservation ? [liveReservation] : []
+function buildProfitBreakdown(bookings, expenses) {
+  const propertyNames = [...new Set([...bookings.map((row) => row.property), ...expenses.map((row) => row.property)])]
 
+  return propertyNames.map((property) => {
+    const bookingRows = bookings.filter((row) => row.property === property)
+    const expenseRows = expenses.filter((row) => row.property === property)
+    const revenueValue = sumAmount(bookingRows)
+    const expenseValue = sumAmount(expenseRows)
+    const netValue = revenueValue - expenseValue
+
+    return {
+      property,
+      revenueValue,
+      expenseValue,
+      netValue,
+      revenue: formatCurrency(revenueValue),
+      expenses: formatCurrency(expenseValue),
+      net: formatCurrency(netValue),
+    }
+  })
+}
+
+export function buildExecutiveDashboardData(bookings, bookingError, expenses) {
+  const safeBookings = Array.isArray(bookings) ? bookings : []
+  const safeExpenses = Array.isArray(expenses) ? expenses : []
+  const upcomingCheckIns = safeBookings.filter((row) => isUpcoming(row.checkIn)).slice(0, 5)
+  const upcomingCheckOuts = safeBookings.filter((row) => isUpcoming(row.checkOut)).slice(0, 5)
+  const revenueTodayValue = sumAmount(safeBookings.filter((row) => isInPeriod(row.createdAt, 'today')))
+  const revenueWeekValue = sumAmount(safeBookings.filter((row) => isInPeriod(row.createdAt, 'week')))
+  const revenueMonthValue = sumAmount(safeBookings.filter((row) => isInPeriod(row.createdAt, 'month')))
+  const bookingsToday = safeBookings.filter((row) => isInPeriod(row.createdAt, 'today')).length
+  const bookingsWeek = safeBookings.filter((row) => isInPeriod(row.createdAt, 'week')).length
+  const bookingsMonth = safeBookings.filter((row) => isInPeriod(row.createdAt, 'month')).length
+  const expensesTodayValue = sumAmount(safeExpenses.filter((row) => isInPeriod(row.date, 'today')))
+  const expensesWeekValue = sumAmount(safeExpenses.filter((row) => isInPeriod(row.date, 'week')))
+  const expensesMonthValue = sumAmount(safeExpenses.filter((row) => isInPeriod(row.date, 'month')))
+  const totalRevenueValue = sumAmount(safeBookings)
+  const totalExpensesValue = sumAmount(safeExpenses)
+  const netProfitValue = totalRevenueValue - totalExpensesValue
+  const failedItems = safeBookings.filter((row) => normalizeStatus(row.status).label === 'Failed').length
   const alerts = []
 
   if (bookingError) {
@@ -149,243 +176,130 @@ export function buildAdminData(booking, bookingError) {
       description: bookingError,
       tone: 'danger',
     })
-  } else if (!liveReservation) {
+  }
+
+  if (failedItems) {
     alerts.push({
-      id: 'sync-pending',
-      title: 'Reservation sync is waiting for data',
-      description: 'I don’t have that data available yet.',
+      id: 'failed-bookings',
+      title: `${failedItems} booking${failedItems > 1 ? 's' : ''} need review`,
+      description: 'Some synced reservation statuses look failed or canceled.',
       tone: 'warning',
     })
   }
 
-  alerts.push({
-    id: 'deposits',
-    title: 'Deposits are not mapped yet',
-    description: 'Capture and release actions are ready in the UI but still need payment wiring.',
-    tone: 'warning',
+  if (!safeBookings.length) {
+    alerts.push({
+      id: 'booking-gap',
+      title: 'No booking history available yet',
+      description: 'I don’t have that data available yet.',
+      tone: 'info',
+    })
+  }
+
+  if (!safeExpenses.length) {
+    alerts.push({
+      id: 'expense-gap',
+      title: 'No expenses have been added yet',
+      description: 'Add cleaning, maintenance, and utility costs to unlock profit reporting.',
+      tone: 'info',
+    })
+  }
+
+  const bookingSummary = safeBookings.slice(0, 10).map((row) => {
+    const paymentState = normalizeStatus(row.status)
+
+    return {
+      ...row,
+      paymentLabel: paymentState.label,
+      paymentTone: paymentState.tone,
+    }
   })
 
-  alerts.push({
-    id: 'reports',
-    title: 'Revenue rollups need more sources',
-    description: 'Weekly and monthly summaries will improve once payments and occupancy data are connected.',
-    tone: 'info',
-  })
-
-  const kpis = [
-    {
-      label: 'Revenue',
-      value: liveReservation?.amount || 'No data yet',
-      hint: liveReservation
-        ? 'Based on the latest synced reservation total.'
-        : 'I don’t have that data available yet.',
-      trend: liveReservation ? 'Latest sync' : 'Waiting',
-      tone: 'accent',
-    },
-    {
-      label: 'Occupancy',
-      value: liveReservation ? 'Live feed' : '--',
-      hint: liveReservation
-        ? 'Calendar occupancy appears once multi-day availability is connected.'
-        : 'Availability sync has not been connected yet.',
-      trend: 'Pending',
-    },
-    {
-      label: 'Bookings',
-      value: liveReservation ? '1' : '0',
-      hint: liveReservation
-        ? 'The newest reservation is already available in the feed.'
-        : 'No reservation has been returned yet.',
-      trend: liveReservation ? 'Connected' : 'Waiting',
-    },
-    {
-      label: 'Active Guests',
-      value: liveReservation ? '1' : '0',
-      hint: liveReservation
-        ? `Tracking ${liveReservation.guest}.`
-        : 'Guest summaries will appear here when bookings sync in.',
-      trend: liveReservation ? 'Live guest' : 'Pending',
-    },
-  ]
-
-  const upcoming = liveReservation
-    ? [
-        {
-          id: 'check-in',
-          label: 'Check-in',
-          title: liveReservation.guest,
-          meta: `${formatDate(liveReservation.checkIn)} at ${liveReservation.property}`,
-        },
-        {
-          id: 'check-out',
-          label: 'Check-out',
-          title: liveReservation.guest,
-          meta: `${formatDate(liveReservation.checkOut)} from ${liveReservation.property}`,
-        },
-      ]
-    : [
-        {
-          id: 'upcoming-empty',
-          label: 'Check-in',
-          title: 'No arrivals synced yet',
-          meta: 'I don’t have that data available yet.',
-        },
-      ]
-
-  const payments = liveReservation
-    ? [
-        {
-          id: `payment-${liveReservation.id}`,
-          guest: liveReservation.guest,
-          property: liveReservation.property,
-          status: liveReservation.paymentStatus,
-          statusTone: liveReservation.paymentTone,
-          amount: liveReservation.amount,
-          room: liveReservation.amount,
-          taxes: 'Not available yet',
-          fees: 'Not available yet',
-          deposit: liveReservation.depositStatus,
-          note: 'Payment breakdown beyond the reservation total is not mapped yet.',
-        },
-      ]
-    : []
-
-  const deposits = liveReservation
-    ? [
-        {
-          id: `deposit-${liveReservation.id}`,
-          guest: liveReservation.guest,
-          property: liveReservation.property,
-          status: liveReservation.depositStatus,
-          statusTone: liveReservation.depositTone,
-          amount: liveReservation.amount,
-          lastUpdated: 'Awaiting payment integration',
-        },
-      ]
-    : []
-
-  const properties = liveReservation
-    ? [
-        {
-          id: `property-${liveReservation.id}`,
-          name: liveReservation.property,
-          status: 'Receiving bookings',
-          statusTone: 'success',
-          note: `Latest synced guest: ${liveReservation.guest}`,
-        },
-      ]
-    : [
-        {
-          id: 'property-placeholder',
-          name: 'Properties will populate here',
-          status: 'Waiting on sync',
-          statusTone: 'warning',
-          note: 'Connect more listing and calendar sources to populate this area.',
-        },
-      ]
-
-  const guests = liveReservation
-    ? [
-        {
-          id: `guest-${liveReservation.id}`,
-          name: liveReservation.guest,
-          email: liveReservation.guestEmail,
-          note: `Currently booked at ${liveReservation.property}.`,
-        },
-      ]
-    : []
-
-  const operationsTasks = liveReservation
-    ? [
-        {
-          id: `task-${liveReservation.id}-arrival`,
-          title: `Prepare arrival for ${liveReservation.guest}`,
-          property: liveReservation.property,
-          assignee: 'Front desk',
-          due: formatDate(liveReservation.checkIn),
-          status: 'In progress',
-        },
-        {
-          id: `task-${liveReservation.id}-checkout`,
-          title: `Queue turnover after checkout`,
-          property: liveReservation.property,
-          assignee: 'Housekeeping',
-          due: formatDate(liveReservation.checkOut),
-          status: 'Planned',
-        },
-      ]
-    : [
-        {
-          id: 'task-empty',
-          title: 'Operations tasks will appear here',
-          property: 'No property yet',
-          assignee: 'Unassigned',
-          due: 'Not available yet',
-          status: 'Planned',
-        },
-      ]
-
-  const reports = [
-    {
-      id: 'weekly-revenue',
-      title: 'Weekly revenue',
-      value: liveReservation?.amount || 'No data yet',
-      note: 'Full weekly rollups need payment history and multi-booking sync.',
-    },
-    {
-      id: 'occupancy-trend',
-      title: 'Occupancy trend',
-      value: 'I don’t have that data available yet.',
-      note: 'Calendar sync will unlock property-level occupancy reporting.',
-    },
-    {
-      id: 'risk-monitor',
-      title: 'Risk monitor',
-      value: alerts.length ? `${alerts.length} items` : 'Clear',
-      note: 'Alerts combine sync issues, missing payment mapping, and data gaps.',
-    },
-  ]
-
-  const settingsGroups = [
-    {
-      id: 'integrations',
-      title: 'Integrations',
-      items: [
-        { label: 'Guesty reservation feed', value: liveReservation ? 'Connected' : 'Waiting' },
-        { label: 'Assistant endpoint', value: 'Connected' },
-        { label: 'Deposits and payment capture', value: 'Needs mapping' },
-      ],
-    },
-    {
-      id: 'access',
-      title: 'Access and roles',
-      items: [
-        { label: 'Admin roles', value: 'Enabled' },
-        { label: 'Super admin account creation', value: 'Enabled' },
-        { label: 'Activity exports', value: 'Coming soon' },
-      ],
-    },
-  ]
+  const expenseBreakdown = buildExpenseBreakdown(safeExpenses)
+  const profitBreakdown = buildProfitBreakdown(safeBookings, safeExpenses)
 
   return {
-    kpis,
-    reservations,
-    payments,
-    deposits,
-    guests,
-    properties,
-    operationsTasks,
-    reports,
-    alerts,
-    upcoming,
-    calendarRows: createPreviewCalendarRows(liveReservation),
-    depositLogs: [
+    heroStats: [
       {
-        id: 'log-1',
-        action: 'Workspace initialized',
-        meta: 'Deposit actions will log here once payment events are connected.',
+        label: 'Revenue today',
+        value: formatCurrency(revenueTodayValue),
+        hint: bookingsToday ? `${bookingsToday} booking sync${bookingsToday > 1 ? 's' : ''} today` : 'No synced bookings today',
+        tone: 'accent',
+      },
+      {
+        label: 'Revenue this week',
+        value: formatCurrency(revenueWeekValue),
+        hint: bookingsWeek ? `${bookingsWeek} booking sync${bookingsWeek > 1 ? 's' : ''} this week` : 'No synced bookings this week',
+      },
+      {
+        label: 'Revenue this month',
+        value: formatCurrency(revenueMonthValue),
+        hint: bookingsMonth ? `${bookingsMonth} booking sync${bookingsMonth > 1 ? 's' : ''} this month` : 'No synced bookings this month',
+      },
+      {
+        label: 'Bookings',
+        value: String(safeBookings.length),
+        hint: safeBookings.length ? 'Using the latest synced reservation history.' : 'Waiting on Guesty booking history.',
+      },
+      {
+        label: 'Occupancy rate',
+        value: 'No data yet',
+        hint: 'Property availability is not connected, so occupancy stays honest here.',
+      },
+      {
+        label: 'Alerts',
+        value: String(alerts.length),
+        hint: alerts.length ? 'Failed syncs or data gaps requiring attention.' : 'No alerts right now.',
       },
     ],
-    settingsGroups,
+    dashboardCards: {
+      upcomingCheckIns,
+      upcomingCheckOuts,
+      alerts,
+    },
+    bookingSummary,
+    expenseSummary: {
+      totalValue: totalExpensesValue,
+      total: formatCurrency(totalExpensesValue),
+      breakdown: expenseBreakdown,
+      recentExpenses: [...safeExpenses]
+        .sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime())
+        .slice(0, 8),
+    },
+    profitSummary: {
+      revenueValue: totalRevenueValue,
+      revenue: formatCurrency(totalRevenueValue),
+      expensesValue: totalExpensesValue,
+      expenses: formatCurrency(totalExpensesValue),
+      netValue: netProfitValue,
+      net: formatCurrency(netProfitValue),
+      breakdown: profitBreakdown,
+    },
+    reports: [
+      {
+        id: 'daily',
+        title: 'Daily summary',
+        revenue: formatCurrency(revenueTodayValue),
+        expenses: formatCurrency(expensesTodayValue),
+        bookings: bookingsToday,
+        note: alerts.length ? `${alerts.length} alerts need review.` : 'No major issues flagged today.',
+      },
+      {
+        id: 'weekly',
+        title: 'Weekly summary',
+        revenue: formatCurrency(revenueWeekValue),
+        expenses: formatCurrency(expensesWeekValue),
+        bookings: bookingsWeek,
+        note: safeExpenses.length ? 'Expense entries are included in this weekly rollup.' : 'Add expenses to improve this report.',
+      },
+      {
+        id: 'monthly',
+        title: 'Monthly summary',
+        revenue: formatCurrency(revenueMonthValue),
+        expenses: formatCurrency(expensesMonthValue),
+        bookings: bookingsMonth,
+        note: safeBookings.length ? 'Based on the most recently synced bookings.' : 'I don’t have that data available yet.',
+      },
+    ],
   }
 }

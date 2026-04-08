@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from './authContext.jsx'
-import { adminNavigation, buildAdminData, formatDate } from './components/admin/dashboardData.js'
+import {
+  adminNavigation,
+  buildExecutiveDashboardData,
+  expenseCategories,
+  formatCurrency,
+  formatDate,
+} from './components/admin/dashboardData.js'
 import {
   ArrowUpRightIcon,
   BellIcon,
-  CheckCircleIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
-  ClockIcon,
   CloseIcon,
   FilterIcon,
   LogoutIcon,
@@ -29,12 +33,7 @@ import {
 import { cx } from './components/admin/utils.js'
 
 const apiBase = import.meta.env.VITE_API_BASE || '/.netlify/functions'
-
-const assistantPrompts = [
-  'How many bookings today?',
-  'Any payment issues?',
-  'Which guests are arriving next?',
-]
+const expenseStorageKey = 'oneluxstay-admin-expenses'
 
 const fieldClasses =
   'w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700 outline-none transition duration-200 placeholder:text-stone-400 focus:border-stone-400 focus:ring-4 focus:ring-stone-200/60'
@@ -43,66 +42,59 @@ const buttonPrimaryClasses =
 const buttonSecondaryClasses =
   'inline-flex items-center justify-center rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm font-medium text-stone-700 transition duration-200 hover:-translate-y-0.5 hover:border-stone-300 hover:text-stone-950'
 
+const assistantPrompts = [
+  'How many bookings today?',
+  'What issues need attention?',
+  'Give me a weekly revenue summary.',
+]
+
 const sectionContent = {
   dashboard: {
-    eyebrow: 'Operations overview',
-    title: 'A calm command center for bookings, guests, and revenue.',
+    eyebrow: 'Executive overview',
+    title: 'A simple control center for bookings, revenue, and risks.',
     description:
-      'Use the live Guesty feed and the admin assistant to review reservations, surface issues, and keep operations moving.',
+      'This dashboard summarizes hotel performance without trying to act like a full PMS.',
   },
-  reservations: {
-    eyebrow: 'Reservation desk',
-    title: 'Filter reservations and open details from a single table.',
+  bookings: {
+    eyebrow: 'Bookings summary',
+    title: 'Latest synced bookings with clear status signals.',
     description:
-      'Use date, property, status, and source filters to narrow the queue before reviewing a booking in the side panel.',
+      'Focus on the newest reservations and their review status instead of operational workflow detail.',
   },
-  calendar: {
-    eyebrow: 'Calendar planning',
-    title: 'Plan blocking across properties with a clean multi-property view.',
+  expenses: {
+    eyebrow: 'Expense tracker',
+    title: 'Track costs in a clean, executive-friendly view.',
     description:
-      'Drag a hold or stay block to another day or property to preview drag-and-drop scheduling.',
+      'Add expenses by category and keep an immediate breakdown of what is reducing profitability.',
   },
-  properties: {
-    eyebrow: 'Portfolio',
-    title: 'Keep every property status visible at a glance.',
+  profit: {
+    eyebrow: 'Profit view',
+    title: 'Revenue minus expenses, with a simple per-property breakdown.',
     description:
-      'Each property card highlights current booking visibility, sync quality, and readiness for operations.',
-  },
-  guests: {
-    eyebrow: 'Guest roster',
-    title: 'Track upcoming guests and their current stay context.',
-    description: 'Guest cards surface the latest available guest information from synced reservations.',
-  },
-  payments: {
-    eyebrow: 'Payments',
-    title: 'Monitor transaction status and payment breakdowns.',
-    description:
-      'Status badges highlight whether payment mapping is ready, pending, or needs follow-up.',
-  },
-  deposits: {
-    eyebrow: 'Deposits',
-    title: 'Review capture and release actions with a live activity trail.',
-    description:
-      'Deposit actions are staged in the UI so the operations flow is ready once payment events are connected.',
-  },
-  operations: {
-    eyebrow: 'Operations queue',
-    title: 'Assign cleaning and maintenance tasks without leaving the dashboard.',
-    description:
-      'Operations tasks update inline so the team always has a clear next action for arrivals and turnovers.',
+      'Net profit stays easy to read, and the dashboard is honest when data is still missing.',
   },
   reports: {
-    eyebrow: 'Reporting',
-    title: 'Summaries stay concise, honest, and ready for decision-making.',
+    eyebrow: 'Reports',
+    title: 'Daily, weekly, and monthly summaries at a glance.',
     description:
-      'When data is missing, the dashboard says so clearly instead of inventing numbers.',
+      'Short summaries keep the focus on decision-making rather than cluttered reporting screens.',
   },
-  settings: {
-    eyebrow: 'Workspace settings',
-    title: 'Check connection status, roles, and workspace preferences.',
+  assistant: {
+    eyebrow: 'AI assistant',
+    title: 'Ask quick questions about bookings, revenue, and issues.',
     description:
-      'This keeps the admin panel transparent about which automations are active and which still need wiring.',
+      'Responses stay concise and grounded in the synced Guesty data that is actually available.',
   },
+}
+
+function createEmptyExpenseForm(defaultProperty = '') {
+  return {
+    property: defaultProperty,
+    category: expenseCategories[0],
+    amount: '',
+    note: '',
+    date: new Date().toISOString().slice(0, 10),
+  }
 }
 
 async function readJsonResponse(response) {
@@ -125,37 +117,6 @@ async function readJsonResponse(response) {
   }
 }
 
-function doesDateMatchFilter(value, filter) {
-  if (filter === 'all') {
-    return true
-  }
-
-  const parsed = value ? new Date(value) : null
-
-  if (!parsed || Number.isNaN(parsed.getTime())) {
-    return filter === 'upcoming'
-  }
-
-  const now = new Date()
-  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const diffMs = parsed.getTime() - startToday.getTime()
-  const diffDays = diffMs / (1000 * 60 * 60 * 24)
-
-  if (filter === 'today') {
-    return diffDays >= 0 && diffDays < 1
-  }
-
-  if (filter === 'next7') {
-    return diffDays >= 0 && diffDays <= 7
-  }
-
-  if (filter === 'upcoming') {
-    return diffDays >= 0
-  }
-
-  return true
-}
-
 function Dashboard() {
   const navigate = useNavigate()
   const { user, supabase, isSuperAdmin, role } = useAuth()
@@ -167,27 +128,41 @@ function Dashboard() {
   const [answer, setAnswer] = useState('')
   const [assistantError, setAssistantError] = useState('')
   const [assistantLoading, setAssistantLoading] = useState(false)
-  const [latestBooking, setLatestBooking] = useState(null)
-  const [bookingLoading, setBookingLoading] = useState(true)
+  const [summaryLoading, setSummaryLoading] = useState(true)
   const [bookingError, setBookingError] = useState('')
-  const [selectedReservation, setSelectedReservation] = useState(null)
-  const [reservationFilters, setReservationFilters] = useState({
-    date: 'all',
-    property: 'all',
-    status: 'all',
-    source: 'all',
-  })
-  const [depositRows, setDepositRows] = useState([])
-  const [depositLogs, setDepositLogs] = useState([])
-  const [operationsTasks, setOperationsTasks] = useState([])
-  const [calendarRows, setCalendarRows] = useState([])
-  const [draggedCalendarBlock, setDraggedCalendarBlock] = useState(null)
+  const [latestBooking, setLatestBooking] = useState(null)
+  const [recentBookings, setRecentBookings] = useState([])
+  const [selectedBooking, setSelectedBooking] = useState(null)
+  const [expenses, setExpenses] = useState([])
+  const [expenseForm, setExpenseForm] = useState(createEmptyExpenseForm())
+
+  useEffect(() => {
+    try {
+      const storedExpenses = window.localStorage.getItem(expenseStorageKey)
+
+      if (!storedExpenses) {
+        return
+      }
+
+      const parsedExpenses = JSON.parse(storedExpenses)
+
+      if (Array.isArray(parsedExpenses)) {
+        setExpenses(parsedExpenses)
+      }
+    } catch {
+      setExpenses([])
+    }
+  }, [])
+
+  useEffect(() => {
+    window.localStorage.setItem(expenseStorageKey, JSON.stringify(expenses))
+  }, [expenses])
 
   useEffect(() => {
     let isMounted = true
 
-    async function loadLatestBooking() {
-      setBookingLoading(true)
+    async function loadSummary() {
+      setSummaryLoading(true)
       setBookingError('')
 
       try {
@@ -195,7 +170,7 @@ function Dashboard() {
         const data = await readJsonResponse(response)
 
         if (!response.ok) {
-          throw new Error(data.error ?? 'Unable to load the latest booking.')
+          throw new Error(data.error ?? 'Unable to load the dashboard summary.')
         }
 
         if (!isMounted) {
@@ -203,79 +178,47 @@ function Dashboard() {
         }
 
         setLatestBooking(data.booking ?? null)
+        setRecentBookings(Array.isArray(data.recentBookings) ? data.recentBookings : [])
+        setExpenseForm((current) =>
+          current.property ? current : createEmptyExpenseForm(data.booking?.listingName || '')
+        )
       } catch (error) {
         if (!isMounted) {
           return
         }
 
         setLatestBooking(null)
+        setRecentBookings([])
         setBookingError(error.message)
       } finally {
         if (isMounted) {
-          setBookingLoading(false)
+          setSummaryLoading(false)
         }
       }
     }
 
-    loadLatestBooking()
+    loadSummary()
 
     return () => {
       isMounted = false
     }
   }, [])
 
-  useEffect(() => {
-    const initialData = buildAdminData(latestBooking, bookingError)
-    setDepositRows(initialData.deposits)
-    setDepositLogs(initialData.depositLogs)
-    setOperationsTasks(initialData.operationsTasks)
-    setCalendarRows(initialData.calendarRows)
-  }, [latestBooking, bookingError])
-
-  const adminData = buildAdminData(latestBooking, bookingError)
+  const dashboardData = buildExecutiveDashboardData(recentBookings, bookingError, expenses)
   const pageMeta = sectionContent[activeSection]
-  const reservationRows = adminData.reservations.filter((row) => {
-    const matchesSearch = `${row.guest} ${row.property} ${row.source} ${row.confirmation}`
+  const normalizedSearch = searchQuery.trim().toLowerCase()
+  const filteredBookings = dashboardData.bookingSummary.filter((row) =>
+    `${row.guestName || row.guest} ${row.property} ${row.confirmationCode || row.confirmation} ${row.source}`
       .toLowerCase()
-      .includes(searchQuery.trim().toLowerCase())
-
-    const matchesProperty =
-      reservationFilters.property === 'all' || row.property === reservationFilters.property
-    const matchesStatus =
-      reservationFilters.status === 'all' || row.status === reservationFilters.status
-    const matchesSource =
-      reservationFilters.source === 'all' || row.source === reservationFilters.source
-    const matchesDate = doesDateMatchFilter(row.checkIn, reservationFilters.date)
-
-    return matchesSearch && matchesProperty && matchesStatus && matchesSource && matchesDate
-  })
-
-  const paymentRows = adminData.payments.filter((row) =>
-    `${row.guest} ${row.property} ${row.status}`.toLowerCase().includes(searchQuery.trim().toLowerCase())
+      .includes(normalizedSearch)
   )
-  const propertyRows = adminData.properties.filter((row) =>
-    `${row.name} ${row.status} ${row.note}`.toLowerCase().includes(searchQuery.trim().toLowerCase())
+  const filteredExpenses = dashboardData.expenseSummary.recentExpenses.filter((expense) =>
+    `${expense.property} ${expense.category} ${expense.note}`.toLowerCase().includes(normalizedSearch)
   )
-  const guestRows = adminData.guests.filter((row) =>
-    `${row.name} ${row.email} ${row.note}`.toLowerCase().includes(searchQuery.trim().toLowerCase())
+  const filteredProfitRows = dashboardData.profitSummary.breakdown.filter((row) =>
+    `${row.property} ${row.revenue} ${row.expenses} ${row.net}`.toLowerCase().includes(normalizedSearch)
   )
-  const alertRows =
-    assistantError && !adminData.alerts.find((item) => item.id === 'assistant-error')
-      ? [
-          {
-            id: 'assistant-error',
-            title: 'Assistant needs attention',
-            description: assistantError,
-            tone: 'danger',
-          },
-          ...adminData.alerts,
-        ]
-      : adminData.alerts
-
-  const propertyOptions = [...new Set(adminData.reservations.map((row) => row.property))]
-  const statusOptions = [...new Set(adminData.reservations.map((row) => row.status))]
-  const sourceOptions = [...new Set(adminData.reservations.map((row) => row.source))]
-  const notificationsCount = alertRows.length
+  const notificationsCount = dashboardData.dashboardCards.alerts.length
 
   async function handleSignOut() {
     await supabase.auth.signOut()
@@ -318,65 +261,40 @@ function Dashboard() {
     }
   }
 
-  function handleDepositAction(row, action) {
-    setDepositRows((currentRows) =>
-      currentRows.map((item) =>
-        item.id === row.id
-          ? {
-              ...item,
-              status: action === 'capture' ? 'Captured' : 'Released',
-              statusTone: action === 'capture' ? 'danger' : 'success',
-              lastUpdated: `${action === 'capture' ? 'Captured' : 'Released'} just now`,
-            }
-          : item
-      )
-    )
-
-    setDepositLogs((currentLogs) => [
-      {
-        id: `${row.id}-${action}-${Date.now()}`,
-        action: `${action === 'capture' ? 'Capture' : 'Release'} requested`,
-        meta: `${row.guest} at ${row.property}`,
-      },
-      ...currentLogs,
-    ])
+  function handleExpenseInput(field, value) {
+    setExpenseForm((current) => ({
+      ...current,
+      [field]: value,
+    }))
   }
 
-  function handleTaskStatusChange(taskId, nextStatus) {
-    setOperationsTasks((currentTasks) =>
-      currentTasks.map((task) => (task.id === taskId ? { ...task, status: nextStatus } : task))
-    )
-  }
+  function handleAddExpense(event) {
+    event.preventDefault()
 
-  function handleCalendarDrop(property, day) {
-    if (!draggedCalendarBlock) {
+    const amountValue = Number(expenseForm.amount)
+
+    if (!expenseForm.property.trim() || !expenseForm.category || !Number.isFinite(amountValue) || amountValue <= 0) {
       return
     }
 
-    setCalendarRows((currentRows) =>
-      currentRows.map((row) => ({
-        ...row,
-        blocks:
-          row.id === draggedCalendarBlock.rowId
-            ? row.blocks.filter((block) => block.id !== draggedCalendarBlock.id)
-            : row.blocks,
-      })).map((row) =>
-        row.id === property
-          ? {
-              ...row,
-              blocks: [
-                ...row.blocks,
-                {
-                  ...draggedCalendarBlock,
-                  day,
-                },
-              ],
-            }
-          : row
-      )
-    )
+    setExpenses((current) => [
+      {
+        id: `expense-${Date.now()}`,
+        property: expenseForm.property.trim(),
+        category: expenseForm.category,
+        amountValue,
+        amount: formatCurrency(amountValue),
+        note: expenseForm.note.trim() || 'No note',
+        date: expenseForm.date,
+      },
+      ...current,
+    ])
 
-    setDraggedCalendarBlock(null)
+    setExpenseForm(createEmptyExpenseForm(expenseForm.property.trim()))
+  }
+
+  function handleDeleteExpense(expenseId) {
+    setExpenses((current) => current.filter((expense) => expense.id !== expenseId))
   }
 
   function renderSidebar(isMobile = false) {
@@ -393,7 +311,7 @@ function Dashboard() {
               OneLuxStay
             </p>
             <h1 className="mt-2 text-xl font-medium tracking-tight text-stone-950">
-              Admin panel
+              Executive view
             </h1>
           </div>
           <IconButton
@@ -470,69 +388,94 @@ function Dashboard() {
     return (
       <div className="space-y-6">
         <Card className="overflow-hidden border-none bg-stone-950 p-6 text-white shadow-panel">
-          <div className="grid gap-6 xl:grid-cols-[1.25fr_0.95fr]">
+          <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
             <div className="space-y-5">
               <Badge tone="accent" className="bg-white/10 text-stone-100">
-                Live operations workspace
+                Minimal executive dashboard
               </Badge>
               <div className="space-y-3">
                 <h3 className="max-w-2xl text-3xl font-medium tracking-tight">
-                  Premium hotel operations without clutter.
+                  Revenue, bookings, costs, and issues in one calm view.
                 </h3>
                 <p className="max-w-2xl text-sm text-stone-300">
-                  This layout keeps reservations, payments, deposits, and the assistant in one
-                  calm workspace. It stays honest about missing data instead of filling the screen
-                  with noise.
+                  This is not a full PMS. It is a lightweight control center for executives who
+                  need a quick operational readout.
                 </p>
               </div>
               <div className="flex flex-wrap gap-3">
                 <Link className={buttonSecondaryClasses} to="/bookings/latest">
-                  Open live booking feed
+                  Live Guesty feed
                 </Link>
-                {isSuperAdmin ? (
-                  <Link className={buttonPrimaryClasses} to="/signup">
-                    Invite admin
-                  </Link>
-                ) : null}
+                <button
+                  type="button"
+                  className={buttonPrimaryClasses}
+                  onClick={() => setActiveSection('assistant')}
+                >
+                  Ask assistant
+                </button>
               </div>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              {adminData.upcoming.map((item) => (
-                <div
-                  key={item.id}
-                  className="rounded-[24px] border border-white/10 bg-white/5 p-5 shadow-inner"
-                >
-                  <p className="text-xs font-medium uppercase tracking-[0.24em] text-stone-400">
-                    {item.label}
-                  </p>
-                  <h4 className="mt-3 text-lg font-medium">{item.title}</h4>
-                  <p className="mt-2 text-sm text-stone-300">{item.meta}</p>
-                </div>
-              ))}
+              <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 shadow-inner">
+                <p className="text-xs font-medium uppercase tracking-[0.24em] text-stone-400">
+                  Upcoming check-ins
+                </p>
+                <p className="mt-3 text-3xl font-medium tracking-tight">
+                  {dashboardData.dashboardCards.upcomingCheckIns.length}
+                </p>
+                <p className="mt-2 text-sm text-stone-300">
+                  {dashboardData.dashboardCards.upcomingCheckIns[0]
+                    ? `${dashboardData.dashboardCards.upcomingCheckIns[0].guestName} on ${formatDate(
+                        dashboardData.dashboardCards.upcomingCheckIns[0].checkIn
+                      )}`
+                    : 'No upcoming check-ins yet.'}
+                </p>
+              </div>
+              <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 shadow-inner">
+                <p className="text-xs font-medium uppercase tracking-[0.24em] text-stone-400">
+                  Upcoming check-outs
+                </p>
+                <p className="mt-3 text-3xl font-medium tracking-tight">
+                  {dashboardData.dashboardCards.upcomingCheckOuts.length}
+                </p>
+                <p className="mt-2 text-sm text-stone-300">
+                  {dashboardData.dashboardCards.upcomingCheckOuts[0]
+                    ? `${dashboardData.dashboardCards.upcomingCheckOuts[0].guestName} on ${formatDate(
+                        dashboardData.dashboardCards.upcomingCheckOuts[0].checkOut
+                      )}`
+                    : 'No upcoming check-outs yet.'}
+                </p>
+              </div>
             </div>
           </div>
         </Card>
 
-        <div className="grid gap-4 xl:grid-cols-4">
-          {adminData.kpis.map((item) => (
-            <MetricCard key={item.label} {...item} />
+        <div className="grid gap-4 xl:grid-cols-3 2xl:grid-cols-6">
+          {dashboardData.heroStats.map((item) => (
+            <MetricCard
+              key={item.label}
+              label={item.label}
+              value={item.value}
+              hint={item.hint}
+              tone={item.tone}
+            />
           ))}
         </div>
 
-        <div className="grid gap-6 2xl:grid-cols-[1.45fr_0.95fr]">
+        <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
           <Card className="p-6">
             <SectionHeader
-              eyebrow="Recent bookings"
-              title="Latest reservation activity"
-              description="Rows stay minimal, with the full booking detail available in the side panel."
+              eyebrow="Latest bookings"
+              title="Most recent booking summary"
+              description="Only the latest synced bookings appear here, keeping the overview fast and readable."
               action={
                 <button
                   type="button"
                   className={buttonSecondaryClasses}
-                  onClick={() => setActiveSection('reservations')}
+                  onClick={() => setActiveSection('bookings')}
                 >
-                  Open reservations
+                  Open bookings
                 </button>
               }
             />
@@ -544,7 +487,7 @@ function Dashboard() {
                     label: 'Guest',
                     render: (row) => (
                       <div>
-                        <p className="font-medium text-stone-900">{row.guest}</p>
+                        <p className="font-medium text-stone-900">{row.guestName}</p>
                         <p className="mt-1 text-xs text-stone-400">{row.guestEmail}</p>
                       </div>
                     ),
@@ -555,266 +498,108 @@ function Dashboard() {
                     render: (row) => (
                       <div>
                         <p className="font-medium text-stone-900">{row.property}</p>
-                        <p className="mt-1 text-xs text-stone-400">{row.confirmation}</p>
-                      </div>
-                    ),
-                  },
-                  {
-                    key: 'stay',
-                    label: 'Stay',
-                    render: (row) => (
-                      <div>
-                        <p>{formatDate(row.checkIn)}</p>
-                        <p className="mt-1 text-xs text-stone-400">{formatDate(row.checkOut)}</p>
+                        <p className="mt-1 text-xs text-stone-400">{row.confirmationCode}</p>
                       </div>
                     ),
                   },
                   {
                     key: 'status',
                     label: 'Status',
-                    render: (row) => <Badge tone={row.statusTone}>{row.status}</Badge>,
+                    render: (row) => <Badge tone={row.paymentTone}>{row.paymentLabel}</Badge>,
                   },
                   {
                     key: 'amount',
                     label: 'Amount',
                     className: 'font-medium text-stone-900',
+                    render: (row) => row.amount,
                   },
                 ]}
-                rows={reservationRows}
-                onRowClick={setSelectedReservation}
-                emptyTitle="No recent bookings yet."
-                emptyDescription="As soon as Guesty returns a reservation, it will appear here."
+                rows={dashboardData.bookingSummary.slice(0, 5)}
+                onRowClick={setSelectedBooking}
+                emptyTitle="No bookings have been synced yet."
+                emptyDescription="The executive dashboard will populate as soon as Guesty returns reservation history."
               />
             </div>
           </Card>
 
-          <Card className="p-6">
-            <SectionHeader
-              eyebrow="Assistant"
-              title="Embedded AI operator"
-              description="Concise answers only, grounded in the latest booking data."
-            />
-            <div className="mt-6 space-y-4">
-              <div className="rounded-[24px] border border-stone-200 bg-stone-50/70 p-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-stone-950 text-white">
-                    <SparklesIcon className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-stone-900">OneLuxStay Assistant</p>
-                    <p className="text-sm text-stone-500">
-                      Asks the serverless function for the latest Guesty context.
+          <div className="grid gap-6">
+            <Card className="p-6">
+              <SectionHeader
+                eyebrow="Alerts"
+                title="What needs attention"
+                description="Only meaningful issues and data gaps are surfaced here."
+              />
+              <div className="mt-6 space-y-3">
+                {dashboardData.dashboardCards.alerts.length ? (
+                  dashboardData.dashboardCards.alerts.map((item) => (
+                    <div
+                      key={item.id}
+                      className="rounded-[22px] border border-stone-200 bg-stone-50/80 p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-stone-900">{item.title}</p>
+                          <p className="mt-2 text-sm text-stone-500">{item.description}</p>
+                        </div>
+                        <Badge tone={item.tone}>{item.tone}</Badge>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-stone-500">No alerts right now.</p>
+                )}
+              </div>
+            </Card>
+
+            <Card className="p-6">
+              <SectionHeader
+                eyebrow="Profit snapshot"
+                title="Current net view"
+                description="Revenue minus expenses using the synced booking data and tracked expenses below."
+              />
+              <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                {[
+                  ['Revenue', dashboardData.profitSummary.revenue],
+                  ['Expenses', dashboardData.profitSummary.expenses],
+                  ['Net profit', dashboardData.profitSummary.net],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="rounded-[22px] border border-stone-200 bg-stone-50/80 p-4"
+                  >
+                    <p className="text-xs font-medium uppercase tracking-[0.24em] text-stone-400">
+                      {label}
+                    </p>
+                    <p className="mt-3 text-2xl font-medium tracking-tight text-stone-950">
+                      {value}
                     </p>
                   </div>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                {assistantPrompts.map((prompt) => (
-                  <button
-                    key={prompt}
-                    type="button"
-                    className={buttonSecondaryClasses}
-                    onClick={() => askAssistant(prompt)}
-                  >
-                    {prompt}
-                  </button>
                 ))}
               </div>
-
-              <div className="space-y-3">
-                <textarea
-                  rows="4"
-                  className={fieldClasses}
-                  placeholder="Ask about bookings, payments, guests, or risks..."
-                  value={question}
-                  onChange={(event) => setQuestion(event.target.value)}
-                />
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    className={buttonPrimaryClasses}
-                    onClick={() => askAssistant()}
-                  >
-                    {assistantLoading ? 'Sending...' : 'Send question'}
-                  </button>
-                  <p className="text-sm text-stone-500">
-                    Runs through <code>{`${apiBase}/guesty-assistant`}</code>
-                  </p>
-                </div>
-              </div>
-
-              {answer ? (
-                <div className="rounded-[24px] border border-stone-200 bg-white p-4">
-                  <p className="text-xs font-medium uppercase tracking-[0.24em] text-stone-400">
-                    Answer
-                  </p>
-                  <p className="mt-3 text-sm leading-7 text-stone-700">{answer}</p>
-                </div>
-              ) : null}
-
-              {assistantError ? (
-                <div className="rounded-[24px] border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
-                  {assistantError}
-                </div>
-              ) : null}
-            </div>
-          </Card>
-        </div>
-
-        <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-          <Card className="p-6">
-            <SectionHeader
-              eyebrow="Alerts"
-              title="Risks and follow-ups"
-              description="Alerts stay focused on what needs action instead of overloading the screen."
-            />
-            <div className="mt-6 space-y-3">
-              {alertRows.map((item) => (
-                <div
-                  key={item.id}
-                  className="rounded-[22px] border border-stone-200 bg-stone-50/80 p-4"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium text-stone-900">{item.title}</p>
-                      <p className="mt-2 text-sm text-stone-500">{item.description}</p>
-                    </div>
-                    <Badge tone={item.tone}>{item.tone}</Badge>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          <Card className="p-6">
-            <SectionHeader
-              eyebrow="Operations pulse"
-              title="Upcoming check-ins and check-outs"
-              description="Short, readable summaries keep the front desk and housekeeping aligned."
-            />
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
-              {adminData.upcoming.map((item) => (
-                <div
-                  key={item.id}
-                  className="rounded-[22px] border border-stone-200 bg-white p-5 shadow-sm"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-stone-100 text-stone-700">
-                      {item.label === 'Check-in' ? (
-                        <ClockIcon className="h-4 w-4" />
-                      ) : (
-                        <CheckCircleIcon className="h-4 w-4" />
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-stone-900">{item.title}</p>
-                      <p className="text-sm text-stone-500">{item.label}</p>
-                    </div>
-                  </div>
-                  <p className="mt-4 text-sm leading-7 text-stone-500">{item.meta}</p>
-                </div>
-              ))}
-            </div>
-          </Card>
+            </Card>
+          </div>
         </div>
       </div>
     )
   }
 
-  function renderReservationsSection() {
+  function renderBookingsSection() {
     return (
       <Card className="p-6">
         <SectionHeader
-          eyebrow="Reservation table"
-          title="Live filters with a slide-over detail panel"
-          description="Rows stay light so the team can scan quickly and open only the booking they need."
+          eyebrow="Bookings summary"
+          title="Latest 10 bookings"
+          description="This view stays simple: guest, property, stay dates, synced status, and amount."
         />
-        <div className="mt-6 grid gap-3 xl:grid-cols-4">
-          <label className="space-y-2">
-            <span className="text-xs font-medium uppercase tracking-[0.24em] text-stone-400">
-              Date
-            </span>
-            <select
-              className={fieldClasses}
-              value={reservationFilters.date}
-              onChange={(event) =>
-                setReservationFilters((current) => ({ ...current, date: event.target.value }))
-              }
-            >
-              <option value="all">All dates</option>
-              <option value="today">Today</option>
-              <option value="next7">Next 7 days</option>
-              <option value="upcoming">Upcoming</option>
-            </select>
-          </label>
-          <label className="space-y-2">
-            <span className="text-xs font-medium uppercase tracking-[0.24em] text-stone-400">
-              Property
-            </span>
-            <select
-              className={fieldClasses}
-              value={reservationFilters.property}
-              onChange={(event) =>
-                setReservationFilters((current) => ({ ...current, property: event.target.value }))
-              }
-            >
-              <option value="all">All properties</option>
-              {propertyOptions.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-2">
-            <span className="text-xs font-medium uppercase tracking-[0.24em] text-stone-400">
-              Status
-            </span>
-            <select
-              className={fieldClasses}
-              value={reservationFilters.status}
-              onChange={(event) =>
-                setReservationFilters((current) => ({ ...current, status: event.target.value }))
-              }
-            >
-              <option value="all">All statuses</option>
-              {statusOptions.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-2">
-            <span className="text-xs font-medium uppercase tracking-[0.24em] text-stone-400">
-              Source
-            </span>
-            <select
-              className={fieldClasses}
-              value={reservationFilters.source}
-              onChange={(event) =>
-                setReservationFilters((current) => ({ ...current, source: event.target.value }))
-              }
-            >
-              <option value="all">All sources</option>
-              {sourceOptions.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
         <div className="mt-6">
           <DataTable
             columns={[
               {
-                key: 'guest',
+                key: 'guestName',
                 label: 'Guest',
                 render: (row) => (
                   <div>
-                    <p className="font-medium text-stone-900">{row.guest}</p>
+                    <p className="font-medium text-stone-900">{row.guestName}</p>
                     <p className="mt-1 text-xs text-stone-400">{row.guestEmail}</p>
                   </div>
                 ),
@@ -837,371 +622,347 @@ function Dashboard() {
               {
                 key: 'status',
                 label: 'Status',
-                render: (row) => <Badge tone={row.statusTone}>{row.status}</Badge>,
+                render: (row) => <Badge tone={row.paymentTone}>{row.paymentLabel}</Badge>,
               },
               {
                 key: 'amount',
                 label: 'Amount',
                 className: 'font-medium text-stone-900',
+                render: (row) => row.amount,
               },
             ]}
-            rows={reservationRows}
-            onRowClick={setSelectedReservation}
-            emptyTitle="No reservations match these filters."
-            emptyDescription="Try clearing the filters or wait for the next Guesty sync."
+            rows={filteredBookings}
+            onRowClick={setSelectedBooking}
+            emptyTitle="No bookings match the current search."
+            emptyDescription="Try clearing the search or wait for the next Guesty sync."
           />
         </div>
       </Card>
     )
   }
 
-  function renderCalendarSection() {
+  function renderExpensesSection() {
     return (
-      <Card className="p-6">
-        <SectionHeader
-          eyebrow="Calendar"
-          title="Drag-and-drop blocking preview"
-          description="Drag a block to another day or property. This gives the team a layout-ready calendar before deeper availability sync is added."
-        />
-        <div className="mt-6 space-y-3">
-          <div className="grid grid-cols-[180px_repeat(7,minmax(0,1fr))] gap-2 text-center text-xs font-medium uppercase tracking-[0.22em] text-stone-400">
-            <div className="rounded-2xl bg-stone-50 px-3 py-3 text-left">Property</div>
-            {calendarRows[0]?.days.map((day) => (
-              <div key={day} className="rounded-2xl bg-stone-50 px-2 py-3">
-                {day}
-              </div>
-            ))}
-          </div>
-          {calendarRows.map((row) => (
-            <div
-              key={row.id}
-              className="grid grid-cols-[180px_repeat(7,minmax(0,1fr))] gap-2"
-            >
-              <div className="rounded-[22px] border border-stone-200 bg-white px-4 py-4">
-                <p className="font-medium text-stone-900">{row.property}</p>
-                <p className="mt-1 text-sm text-stone-500">Drag blocks between days</p>
-              </div>
-              {row.days.map((day, dayIndex) => {
-                const dayBlocks = row.blocks.filter((block) => block.day === dayIndex)
-
-                return (
-                  <div
-                    key={`${row.id}-${day}`}
-                    className="min-h-[88px] rounded-[22px] border border-dashed border-stone-200 bg-stone-50/70 p-2"
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={() => handleCalendarDrop(row.id, dayIndex)}
-                  >
-                    <div className="flex h-full flex-col gap-2">
-                      {dayBlocks.map((block) => (
-                        <button
-                          key={block.id}
-                          type="button"
-                          draggable
-                          onDragStart={() =>
-                            setDraggedCalendarBlock({
-                              ...block,
-                              rowId: row.id,
-                            })
-                          }
-                          className={cx(
-                            'rounded-2xl px-3 py-2 text-left text-xs font-medium transition duration-200 hover:-translate-y-0.5',
-                            block.tone === 'accent'
-                              ? 'bg-stone-950 text-white'
-                              : block.tone === 'warning'
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-white text-stone-700'
-                          )}
-                        >
-                          {block.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          ))}
-        </div>
-      </Card>
-    )
-  }
-
-  function renderPropertiesSection() {
-    return propertyRows.length ? (
-      <div className="grid gap-4 xl:grid-cols-3">
-        {propertyRows.map((property) => (
-          <Card key={property.id} className="p-6">
-            <div className="space-y-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-[0.24em] text-stone-400">
-                    Property
-                  </p>
-                  <h3 className="mt-2 text-xl font-medium tracking-tight text-stone-950">
-                    {property.name}
-                  </h3>
-                </div>
-                <Badge tone={property.statusTone}>{property.status}</Badge>
-              </div>
-              <p className="text-sm leading-7 text-stone-500">{property.note}</p>
-            </div>
-          </Card>
-        ))}
-      </div>
-    ) : (
-      <EmptyState
-        title="No property cards yet."
-        description="Once more listing data is synced, each property will show occupancy, issues, and live readiness."
-      />
-    )
-  }
-
-  function renderGuestsSection() {
-    return guestRows.length ? (
-      <div className="grid gap-4 xl:grid-cols-3">
-        {guestRows.map((guest) => (
-          <Card key={guest.id} className="p-6">
-            <p className="text-xs font-medium uppercase tracking-[0.24em] text-stone-400">
-              Guest
-            </p>
-            <h3 className="mt-2 text-xl font-medium tracking-tight text-stone-950">{guest.name}</h3>
-            <p className="mt-4 text-sm text-stone-500">{guest.email}</p>
-            <p className="mt-4 text-sm leading-7 text-stone-500">{guest.note}</p>
-          </Card>
-        ))}
-      </div>
-    ) : (
-      <EmptyState
-        title="No guest profiles yet."
-        description="Guest cards will appear after bookings are synced from your reservation source."
-      />
-    )
-  }
-
-  function renderPaymentsSection() {
-    return (
-      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+      <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
         <Card className="p-6">
           <SectionHeader
-            eyebrow="Transactions"
-            title="Payment status and source of truth"
-            description="This panel stays clean until detailed payment mapping is available."
+            eyebrow="Add expense"
+            title="Track operating costs"
+            description="Keep this lightweight: property, category, amount, note, and date."
+          />
+          <form className="mt-6 space-y-4" onSubmit={handleAddExpense}>
+            <label className="space-y-2">
+              <span className="text-xs font-medium uppercase tracking-[0.24em] text-stone-400">
+                Property
+              </span>
+              <input
+                className={fieldClasses}
+                value={expenseForm.property}
+                onChange={(event) => handleExpenseInput('property', event.target.value)}
+                placeholder={latestBooking?.listingName || 'Property name'}
+              />
+            </label>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="space-y-2">
+                <span className="text-xs font-medium uppercase tracking-[0.24em] text-stone-400">
+                  Category
+                </span>
+                <select
+                  className={fieldClasses}
+                  value={expenseForm.category}
+                  onChange={(event) => handleExpenseInput('category', event.target.value)}
+                >
+                  {expenseCategories.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-2">
+                <span className="text-xs font-medium uppercase tracking-[0.24em] text-stone-400">
+                  Amount
+                </span>
+                <input
+                  className={fieldClasses}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={expenseForm.amount}
+                  onChange={(event) => handleExpenseInput('amount', event.target.value)}
+                  placeholder="0.00"
+                />
+              </label>
+            </div>
+            <label className="space-y-2">
+              <span className="text-xs font-medium uppercase tracking-[0.24em] text-stone-400">
+                Note
+              </span>
+              <input
+                className={fieldClasses}
+                value={expenseForm.note}
+                onChange={(event) => handleExpenseInput('note', event.target.value)}
+                placeholder="Cleaning invoice, utility bill, repair..."
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-xs font-medium uppercase tracking-[0.24em] text-stone-400">
+                Date
+              </span>
+              <input
+                className={fieldClasses}
+                type="date"
+                value={expenseForm.date}
+                onChange={(event) => handleExpenseInput('date', event.target.value)}
+              />
+            </label>
+            <button type="submit" className={buttonPrimaryClasses}>
+              Add expense
+            </button>
+          </form>
+        </Card>
+
+        <div className="grid gap-6">
+          <Card className="p-6">
+            <SectionHeader
+              eyebrow="Expense totals"
+              title="Breakdown by category"
+              description="A clean view of where operating costs are going."
+            />
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              {dashboardData.expenseSummary.breakdown.map((item) => (
+                <div
+                  key={item.category}
+                  className="rounded-[22px] border border-stone-200 bg-stone-50/80 p-4"
+                >
+                  <p className="text-sm font-medium text-stone-900">{item.category}</p>
+                  <p className="mt-3 text-2xl font-medium tracking-tight text-stone-950">
+                    {item.total}
+                  </p>
+                  <p className="mt-2 text-sm text-stone-500">
+                    {item.count} expense{item.count === 1 ? '' : 's'}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <SectionHeader
+              eyebrow="Recent expenses"
+              title="Latest tracked costs"
+              description="Keep the list short and easy to scan."
+            />
+            <div className="mt-6 space-y-3">
+              {filteredExpenses.length ? (
+                filteredExpenses.map((expense) => (
+                  <div
+                    key={expense.id}
+                    className="flex flex-col gap-4 rounded-[22px] border border-stone-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div>
+                      <p className="font-medium text-stone-900">{expense.property}</p>
+                      <p className="mt-2 text-sm text-stone-500">
+                        {expense.category} • {expense.note}
+                      </p>
+                      <p className="mt-1 text-sm text-stone-400">{formatDate(expense.date)}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <p className="text-sm font-medium text-stone-900">{expense.amount}</p>
+                      <button
+                        type="button"
+                        className={buttonSecondaryClasses}
+                        onClick={() => handleDeleteExpense(expense.id)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <EmptyState
+                  title="No expenses yet."
+                  description="Add cleaning, maintenance, utility, or supply costs to start tracking profitability."
+                />
+              )}
+            </div>
+          </Card>
+        </div>
+      </div>
+    )
+  }
+
+  function renderProfitSection() {
+    return (
+      <div className="grid gap-6">
+        <div className="grid gap-4 xl:grid-cols-3">
+          <MetricCard
+            label="Synced revenue"
+            value={dashboardData.profitSummary.revenue}
+            hint="Based on the current cached Guesty booking history."
+            tone="accent"
+          />
+          <MetricCard
+            label="Tracked expenses"
+            value={dashboardData.profitSummary.expenses}
+            hint="Pulled from the lightweight expense tracker."
+          />
+          <MetricCard
+            label="Net profit"
+            value={dashboardData.profitSummary.net}
+            hint="Revenue minus expenses."
+          />
+        </div>
+
+        <Card className="p-6">
+          <SectionHeader
+            eyebrow="Per property"
+            title="Profit breakdown by property"
+            description="This keeps the executive view focused on profitability, not operations workflows."
           />
           <div className="mt-6">
             <DataTable
               columns={[
-                { key: 'guest', label: 'Guest', className: 'font-medium text-stone-900' },
-                { key: 'property', label: 'Property' },
                 {
-                  key: 'status',
-                  label: 'Status',
-                  render: (row) => <Badge tone={row.statusTone}>{row.status}</Badge>,
+                  key: 'property',
+                  label: 'Property',
+                  className: 'font-medium text-stone-900',
                 },
-                { key: 'amount', label: 'Amount', className: 'font-medium text-stone-900' },
+                { key: 'revenue', label: 'Revenue' },
+                { key: 'expenses', label: 'Expenses' },
+                { key: 'net', label: 'Net profit', className: 'font-medium text-stone-900' },
               ]}
-              rows={paymentRows}
-              emptyTitle="No payment data yet."
-              emptyDescription="Payment status will populate here once transaction events are connected."
+              rows={filteredProfitRows}
+              emptyTitle="No property profit data yet."
+              emptyDescription="Sync bookings and add expenses to populate the property breakdown."
             />
           </div>
         </Card>
-
-        <Card className="p-6">
-          <SectionHeader
-            eyebrow="Breakdown"
-            title="Room, taxes, fees, and deposit"
-            description="A focused card for the booking currently in view."
-          />
-          <div className="mt-6 space-y-3">
-            {paymentRows[0] ? (
-              ['room', 'taxes', 'fees', 'deposit'].map((key) => (
-                <div
-                  key={key}
-                  className="flex items-center justify-between rounded-[22px] border border-stone-200 bg-stone-50/70 px-4 py-4"
-                >
-                  <p className="text-sm font-medium capitalize text-stone-700">{key}</p>
-                  <p className="text-sm text-stone-500">{paymentRows[0][key]}</p>
-                </div>
-              ))
-            ) : (
-              <p className="text-sm text-stone-500">I don’t have that data available yet.</p>
-            )}
-          </div>
-        </Card>
       </div>
-    )
-  }
-
-  function renderDepositsSection() {
-    return (
-      <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
-        <Card className="p-6">
-          <SectionHeader
-            eyebrow="Deposit controls"
-            title="Capture or release with a clear activity trail"
-            description="These actions are wired into the UI first, so operations flow is ready when deposit events are connected."
-          />
-          <div className="mt-6 space-y-4">
-            {depositRows.length ? (
-              depositRows.map((row) => (
-                <div
-                  key={row.id}
-                  className="rounded-[24px] border border-stone-200 bg-white p-5 shadow-sm"
-                >
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="space-y-2">
-                      <p className="text-lg font-medium tracking-tight text-stone-950">
-                        {row.guest}
-                      </p>
-                      <p className="text-sm text-stone-500">{row.property}</p>
-                      <p className="text-sm text-stone-500">{row.amount}</p>
-                    </div>
-                    <div className="space-y-3">
-                      <Badge tone={row.statusTone}>{row.status}</Badge>
-                      <p className="text-sm text-stone-500">{row.lastUpdated}</p>
-                    </div>
-                  </div>
-                  <div className="mt-5 flex flex-wrap gap-3">
-                    <button
-                      type="button"
-                      className={buttonSecondaryClasses}
-                      onClick={() => handleDepositAction(row, 'release')}
-                    >
-                      Release
-                    </button>
-                    <button
-                      type="button"
-                      className={buttonPrimaryClasses}
-                      onClick={() => handleDepositAction(row, 'capture')}
-                    >
-                      Capture
-                    </button>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <EmptyState
-                title="No deposits available yet."
-                description="Deposit status appears here once payment events are connected."
-              />
-            )}
-          </div>
-        </Card>
-
-        <Card className="p-6">
-          <SectionHeader
-            eyebrow="Activity log"
-            title="Recent deposit events"
-            description="Each action writes a visible log entry so nothing disappears after a click."
-          />
-          <div className="mt-6 space-y-3">
-            {depositLogs.map((item) => (
-              <div
-                key={item.id}
-                className="rounded-[22px] border border-stone-200 bg-stone-50/70 p-4"
-              >
-                <p className="font-medium text-stone-900">{item.action}</p>
-                <p className="mt-2 text-sm text-stone-500">{item.meta}</p>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
-    )
-  }
-
-  function renderOperationsSection() {
-    return (
-      <Card className="p-6">
-        <SectionHeader
-          eyebrow="Task management"
-          title="Assign staff and track execution status"
-          description="Operations stay compact with inline task updates and ownership clearly visible."
-        />
-        <div className="mt-6 space-y-4">
-          {operationsTasks.map((task) => (
-            <div
-              key={task.id}
-              className="grid gap-4 rounded-[24px] border border-stone-200 bg-white p-5 shadow-sm xl:grid-cols-[1.4fr_repeat(3,minmax(0,0.8fr))]"
-            >
-              <div>
-                <p className="text-lg font-medium tracking-tight text-stone-950">{task.title}</p>
-                <p className="mt-2 text-sm text-stone-500">{task.property}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase tracking-[0.24em] text-stone-400">
-                  Assignee
-                </p>
-                <p className="mt-3 text-sm text-stone-700">{task.assignee}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase tracking-[0.24em] text-stone-400">
-                  Due
-                </p>
-                <p className="mt-3 text-sm text-stone-700">{task.due}</p>
-              </div>
-              <label className="space-y-2">
-                <span className="text-xs font-medium uppercase tracking-[0.24em] text-stone-400">
-                  Status
-                </span>
-                <select
-                  className={fieldClasses}
-                  value={task.status}
-                  onChange={(event) => handleTaskStatusChange(task.id, event.target.value)}
-                >
-                  <option>Planned</option>
-                  <option>In progress</option>
-                  <option>Blocked</option>
-                  <option>Done</option>
-                </select>
-              </label>
-            </div>
-          ))}
-        </div>
-      </Card>
     )
   }
 
   function renderReportsSection() {
     return (
       <div className="grid gap-4 xl:grid-cols-3">
-        {adminData.reports.map((report) => (
+        {dashboardData.reports.map((report) => (
           <Card key={report.id} className="p-6">
             <p className="text-xs font-medium uppercase tracking-[0.24em] text-stone-400">
-              Report card
-            </p>
-            <h3 className="mt-2 text-xl font-medium tracking-tight text-stone-950">
               {report.title}
-            </h3>
-            <p className="mt-5 text-2xl font-medium tracking-tight text-stone-950">
-              {report.value}
             </p>
-            <p className="mt-4 text-sm leading-7 text-stone-500">{report.note}</p>
+            <div className="mt-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-stone-500">Revenue</p>
+                <p className="text-sm font-medium text-stone-900">{report.revenue}</p>
+              </div>
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-stone-500">Expenses</p>
+                <p className="text-sm font-medium text-stone-900">{report.expenses}</p>
+              </div>
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-stone-500">Bookings</p>
+                <p className="text-sm font-medium text-stone-900">{report.bookings}</p>
+              </div>
+            </div>
+            <p className="mt-5 text-sm leading-7 text-stone-500">{report.note}</p>
           </Card>
         ))}
       </div>
     )
   }
 
-  function renderSettingsSection() {
+  function renderAssistantSection() {
     return (
-      <div className="grid gap-4 xl:grid-cols-2">
-        {adminData.settingsGroups.map((group) => (
-          <Card key={group.id} className="p-6">
-            <SectionHeader eyebrow="Settings group" title={group.title} />
-            <div className="mt-6 space-y-3">
-              {group.items.map((item) => (
-                <div
-                  key={item.label}
-                  className="flex items-center justify-between rounded-[22px] border border-stone-200 bg-stone-50/70 px-4 py-4"
+      <div className="grid gap-6 xl:grid-cols-[1fr_0.86fr]">
+        <Card className="p-6">
+          <SectionHeader
+            eyebrow="AI assistant"
+            title="Ask about revenue, bookings, and issues"
+            description="Answers stay short, clear, and grounded in the synced Guesty data."
+          />
+          <div className="mt-6 space-y-4">
+            <div className="flex flex-wrap gap-2">
+              {assistantPrompts.map((prompt) => (
+                <button
+                  key={prompt}
+                  type="button"
+                  className={buttonSecondaryClasses}
+                  onClick={() => askAssistant(prompt)}
                 >
-                  <p className="text-sm font-medium text-stone-700">{item.label}</p>
-                  <p className="text-sm text-stone-500">{item.value}</p>
-                </div>
+                  {prompt}
+                </button>
               ))}
             </div>
-          </Card>
-        ))}
+
+            <textarea
+              rows="5"
+              className={fieldClasses}
+              placeholder="Ask about revenue, bookings, alerts, or issues..."
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+            />
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                className={buttonPrimaryClasses}
+                onClick={() => askAssistant()}
+              >
+                {assistantLoading ? 'Sending...' : 'Send question'}
+              </button>
+              <p className="text-sm text-stone-500">
+                Runs through <code>{`${apiBase}/guesty-assistant`}</code>
+              </p>
+            </div>
+
+            {answer ? (
+              <div className="rounded-[24px] border border-stone-200 bg-white p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.24em] text-stone-400">
+                  Answer
+                </p>
+                <p className="mt-3 text-sm leading-7 text-stone-700">{answer}</p>
+              </div>
+            ) : null}
+
+            {assistantError ? (
+              <div className="rounded-[24px] border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                {assistantError}
+              </div>
+            ) : null}
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <SectionHeader
+            eyebrow="Current context"
+            title="What the assistant can see"
+            description="This keeps the assistant transparent about the data currently available."
+          />
+          <div className="mt-6 space-y-4">
+            <div className="rounded-[22px] border border-stone-200 bg-stone-50/80 p-4">
+              <p className="text-sm font-medium text-stone-900">Latest booking</p>
+              <p className="mt-2 text-sm text-stone-500">
+                {latestBooking
+                  ? `${latestBooking.guestName} at ${latestBooking.listingName}, ${formatDate(
+                      latestBooking.checkIn
+                    )} to ${formatDate(latestBooking.checkOut)}`
+                  : 'I don’t have that data available yet.'}
+              </p>
+            </div>
+            <div className="rounded-[22px] border border-stone-200 bg-stone-50/80 p-4">
+              <p className="text-sm font-medium text-stone-900">Revenue context</p>
+              <p className="mt-2 text-sm text-stone-500">
+                Synced booking revenue: {dashboardData.profitSummary.revenue}
+              </p>
+            </div>
+            <div className="rounded-[22px] border border-stone-200 bg-stone-50/80 p-4">
+              <p className="text-sm font-medium text-stone-900">Expense context</p>
+              <p className="mt-2 text-sm text-stone-500">
+                Tracked expenses: {dashboardData.profitSummary.expenses}
+              </p>
+            </div>
+          </div>
+        </Card>
       </div>
     )
   }
@@ -1210,24 +971,16 @@ function Dashboard() {
     switch (activeSection) {
       case 'dashboard':
         return renderDashboardSection()
-      case 'reservations':
-        return renderReservationsSection()
-      case 'calendar':
-        return renderCalendarSection()
-      case 'properties':
-        return renderPropertiesSection()
-      case 'guests':
-        return renderGuestsSection()
-      case 'payments':
-        return renderPaymentsSection()
-      case 'deposits':
-        return renderDepositsSection()
-      case 'operations':
-        return renderOperationsSection()
+      case 'bookings':
+        return renderBookingsSection()
+      case 'expenses':
+        return renderExpensesSection()
+      case 'profit':
+        return renderProfitSection()
       case 'reports':
         return renderReportsSection()
-      case 'settings':
-        return renderSettingsSection()
+      case 'assistant':
+        return renderAssistantSection()
       default:
         return renderDashboardSection()
     }
@@ -1258,7 +1011,7 @@ function Dashboard() {
                     <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
                     <input
                       className={cx(fieldClasses, 'pl-11')}
-                      placeholder="Search bookings, guests, or properties"
+                      placeholder="Search bookings, expenses, or properties"
                       value={searchQuery}
                       onChange={(event) => setSearchQuery(event.target.value)}
                     />
@@ -1268,7 +1021,7 @@ function Dashboard() {
                 <div className="flex flex-wrap items-center gap-3">
                   <button type="button" className={buttonSecondaryClasses}>
                     <FilterIcon className="mr-2 h-4 w-4" />
-                    Filters
+                    Executive filters
                   </button>
                   <IconButton>
                     <div className="relative">
@@ -1305,8 +1058,8 @@ function Dashboard() {
               description={pageMeta.description}
               action={
                 <div className="flex flex-wrap gap-3">
-                  <Badge tone={bookingLoading ? 'warning' : bookingError ? 'danger' : 'success'}>
-                    {bookingLoading ? 'Loading Guesty' : bookingError ? 'Sync issue' : 'Guesty live'}
+                  <Badge tone={summaryLoading ? 'warning' : bookingError ? 'danger' : 'success'}>
+                    {summaryLoading ? 'Loading Guesty' : bookingError ? 'Sync issue' : 'Guesty live'}
                   </Badge>
                   <Link className={buttonSecondaryClasses} to="/bookings/latest">
                     Latest feed
@@ -1322,17 +1075,21 @@ function Dashboard() {
       </div>
 
       <SlideOver
-        open={!!selectedReservation}
-        title={selectedReservation?.guest || 'Reservation details'}
+        open={!!selectedBooking}
+        title={selectedBooking?.guestName || 'Booking details'}
         description={
-          selectedReservation
-            ? `${selectedReservation.property} • ${selectedReservation.confirmation}`
+          selectedBooking
+            ? `${selectedBooking.property} • ${selectedBooking.confirmationCode}`
             : ''
         }
-        onClose={() => setSelectedReservation(null)}
+        onClose={() => setSelectedBooking(null)}
         footer={
           <div className="flex flex-wrap gap-3">
-            <button type="button" className={buttonSecondaryClasses} onClick={() => setSelectedReservation(null)}>
+            <button
+              type="button"
+              className={buttonSecondaryClasses}
+              onClick={() => setSelectedBooking(null)}
+            >
               Close
             </button>
             <Link className={buttonPrimaryClasses} to="/bookings/latest">
@@ -1341,7 +1098,7 @@ function Dashboard() {
           </div>
         }
       >
-        {selectedReservation ? (
+        {selectedBooking ? (
           <div className="space-y-5">
             <Card className="p-5">
               <div className="flex items-start justify-between gap-3">
@@ -1350,23 +1107,23 @@ function Dashboard() {
                     Guest
                   </p>
                   <h4 className="mt-2 text-xl font-medium tracking-tight text-stone-950">
-                    {selectedReservation.guest}
+                    {selectedBooking.guestName}
                   </h4>
-                  <p className="mt-3 text-sm text-stone-500">{selectedReservation.guestEmail}</p>
+                  <p className="mt-3 text-sm text-stone-500">{selectedBooking.guestEmail}</p>
                 </div>
-                <Badge tone={selectedReservation.statusTone}>{selectedReservation.status}</Badge>
+                <Badge tone={selectedBooking.paymentTone}>{selectedBooking.paymentLabel}</Badge>
               </div>
             </Card>
 
             <Card className="p-5">
               <div className="space-y-4">
                 {[
-                  ['Property', selectedReservation.property],
-                  ['Source', selectedReservation.source],
-                  ['Check-in', formatDate(selectedReservation.checkIn)],
-                  ['Check-out', formatDate(selectedReservation.checkOut)],
-                  ['Amount', selectedReservation.amount],
-                  ['Confirmation', selectedReservation.confirmation],
+                  ['Property', selectedBooking.property],
+                  ['Source', selectedBooking.source],
+                  ['Check-in', formatDate(selectedBooking.checkIn)],
+                  ['Check-out', formatDate(selectedBooking.checkOut)],
+                  ['Amount', selectedBooking.amount],
+                  ['Confirmation', selectedBooking.confirmationCode],
                 ].map(([label, value]) => (
                   <div key={label} className="flex items-center justify-between gap-4">
                     <p className="text-sm font-medium text-stone-700">{label}</p>
@@ -1374,15 +1131,6 @@ function Dashboard() {
                   </div>
                 ))}
               </div>
-            </Card>
-
-            <Card className="p-5">
-              <p className="text-xs font-medium uppercase tracking-[0.24em] text-stone-400">
-                Notes
-              </p>
-              <p className="mt-3 text-sm leading-7 text-stone-500">
-                {selectedReservation.note}
-              </p>
             </Card>
           </div>
         ) : null}
