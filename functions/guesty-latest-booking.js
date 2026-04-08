@@ -2,11 +2,15 @@
 
 import {
   getCachedReservationSnapshot,
-  getLatestReservation,
   getRecentReservations,
 } from './_lib/guesty.js'
 
-const DEFAULT_HANDLER_TIMEOUT_MS = 12000
+// ✅ CACHE (add this at top)
+let cache = null
+let lastFetch = 0
+const CACHE_DURATION = 30000 // 30 seconds
+
+const DEFAULT_HANDLER_TIMEOUT_MS = 8000
 
 function getHandlerTimeoutMs() {
   const configuredMs = Number(process.env.GUESTY_HANDLER_TIMEOUT_MS)
@@ -33,22 +37,43 @@ function withHardTimeout(promise, timeoutMs, label) {
 }
 
 export const handler = async () => {
+  const now = Date.now()
+
+  // ✅ RETURN CACHE (prevents rate limit)
+  if (cache && now - lastFetch < CACHE_DURATION) {
+    console.log("Returning cached data")
+    return {
+      statusCode: 200,
+      body: JSON.stringify(cache),
+    }
+  }
+
   try {
+    console.log("Fetching from Guesty...")
+
     const recentBookings = await withHardTimeout(
-      getRecentReservations(10),
+      getRecentReservations(1), // ✅ FIX: only 1 booking
       getHandlerTimeoutMs(),
       'Guesty latest-booking handler'
     )
+
     const booking = recentBookings[0] || null
+
+    const data = {
+      connected: true,
+      booking,
+      recentBookings,
+    }
+
+    // ✅ SAVE CACHE
+    cache = data
+    lastFetch = now
 
     return {
       statusCode: 200,
-      body: JSON.stringify({
-        connected: true,
-        booking,
-        recentBookings,
-      }),
+      body: JSON.stringify(data),
     }
+
   } catch (error) {
     const cachedSnapshot = getCachedReservationSnapshot()
 
