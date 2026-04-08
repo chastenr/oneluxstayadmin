@@ -65,7 +65,7 @@ function Signup() {
               <span>Full name</span>
               <input
                 type="text"
-                placeholder="Please type your first and last name like this"
+                placeholder="Please Type Your Full Name"
                 value={fullName}
                 onChange={(event) => setFullName(event.target.value)}
                 required
