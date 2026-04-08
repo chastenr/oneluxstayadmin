@@ -6,10 +6,7 @@
   directory = "functions"
 
 [dev]
-  command = "npx vite --host 0.0.0.0 --port 5173 --strictPort"
-  targetPort = 5173
-
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
+  command = "npx vite --host 0.0.0.0 --port 5175 --strictPort"
+  port = 8889
+  publish = "public"
+  targetPort = 5175

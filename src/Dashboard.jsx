@@ -56,11 +56,23 @@ async function readJsonResponse(response) {
 
 function Dashboard() {
   const navigate = useNavigate()
-  const { user, supabase } = useAuth()
+  const { user, supabase, isSuperAdmin, role } = useAuth()
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const allOverviewCards = isSuperAdmin
+    ? [
+        ...overviewCards,
+        {
+          title: 'User access',
+          value: 'Super admin',
+          note: 'Create and manage internal admin accounts for the operations team.',
+          linkLabel: 'Create account',
+          linkTo: '/signup',
+        },
+      ]
+    : overviewCards
 
   async function handleSignOut() {
     await supabase.auth.signOut()
@@ -113,6 +125,14 @@ function Dashboard() {
 
         <div className="concierge-topbar-actions">
           <span className="user-chip">{user?.email ?? 'unknown user'}</span>
+          <span className="user-chip">
+            {role === 'superadmin' ? 'Super admin' : 'Admin'}
+          </span>
+          {isSuperAdmin ? (
+            <Link className="secondary-link" to="/signup">
+              Create account
+            </Link>
+          ) : null}
           <button className="ghost-button" type="button" onClick={handleSignOut}>
             Sign out
           </button>
@@ -196,7 +216,7 @@ function Dashboard() {
         </div>
 
         <div className="overview-grid">
-          {overviewCards.map((card) => (
+          {allOverviewCards.map((card) => (
             <article className="overview-card" key={card.title}>
               <p className="eyebrow">{card.title}</p>
               <h3 className="overview-value">{card.value}</h3>

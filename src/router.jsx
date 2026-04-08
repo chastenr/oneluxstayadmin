@@ -13,7 +13,11 @@ export const router = createBrowserRouter([
   },
   {
     path: '/signup',
-    element: <Signup />,
+    element: (
+      <ProtectedRoute requireSuperAdmin>
+        <Signup />
+      </ProtectedRoute>
+    ),
   },
   {
     path: '/signin',

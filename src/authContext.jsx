@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from './supabaseClient.jsx'
+import { getUserAccessRole, isSuperAdminUser } from './authRoles.js'
 
 const AuthContext = createContext(null)
 
@@ -7,6 +8,8 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
+  const isSuperAdmin = isSuperAdminUser(user)
+  const role = getUserAccessRole(user)
 
   useEffect(() => {
     let isMounted = true
@@ -42,7 +45,7 @@ export function AuthProvider({ children }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, supabase }}>
+    <AuthContext.Provider value={{ user, session, loading, supabase, isSuperAdmin, role }}>
       {children}
     </AuthContext.Provider>
   )

@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { useAuth } from './authContext.jsx'
 
+const apiBase = import.meta.env.VITE_API_BASE || '/.netlify/functions'
+
 function Signup() {
-  const navigate = useNavigate()
-  const { supabase } = useAuth()
+  const { session } = useAuth()
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -17,49 +18,77 @@ function Signup() {
     setSubmitting(true)
     setError('')
     setMessage('')
+    const normalizedFullName = fullName.trim()
+    const normalizedEmail = email.trim().toLowerCase()
 
-    const { data, error: signUpError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/signin`,
-        data: {
-          full_name: fullName.trim(),
+    try {
+      if (!session?.access_token) {
+        throw new Error('Your session expired. Please log in again.')
+      }
+
+      const response = await fetch(`${apiBase}/admin-signup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
         },
-      },
-    })
+        body: JSON.stringify({
+          fullName: normalizedFullName,
+          email: normalizedEmail,
+          password,
+        }),
+      })
 
-    setSubmitting(false)
+      const text = await response.text()
+      const data = text ? JSON.parse(text) : {}
 
-    if (signUpError) {
-      setError(
-        `${signUpError.message}${signUpError.status ? ` (status ${signUpError.status})` : ''}`
-      )
-      return
+      if (!response.ok) {
+        throw new Error(
+          `${data.error || 'Unable to create the account.'}${
+            response.status ? ` (status ${response.status})` : ''
+          }`
+        )
+      }
+
+      setFullName('')
+      setEmail('')
+      setPassword('')
+      setMessage(`Account created for ${data.user?.email || normalizedEmail}.`)
+    } catch (requestError) {
+      const messageText =
+        requestError instanceof Error ? requestError.message : 'Unable to create the account.'
+      const normalizedMessage = messageText.toLowerCase()
+
+      if (
+        normalizedMessage.includes('unexpected token') ||
+        normalizedMessage.includes('<!doctype html') ||
+        normalizedMessage.includes('<html')
+      ) {
+        setError(
+          'The signup function is not running on this URL yet. If you are testing locally, use Netlify Dev or deploy the site first.'
+        )
+      } else {
+        setError(messageText)
+      }
+    } finally {
+      setSubmitting(false)
     }
-
-    if (data.session) {
-      navigate('/dashboard', { replace: true })
-      return
-    }
-
-    setMessage('Account created. Check your email to confirm your account.')
   }
 
   return (
     <main className="auth-page">
       <section className="auth-shell">
         <div className="auth-copy">
-          <p className="eyebrow">Hidden setup</p>
+          <p className="eyebrow">Superadmin only</p>
           <h1 className="display-title">Create admin access.</h1>
           <p className="body-copy">
-            Use this only for internal team onboarding while the admin workspace is being
-            configured.
+            Create accounts for internal admins. Regular admins should not have access to
+            this page or the account creation function.
           </p>
         </div>
 
         <section className="auth-card">
-          <h2>Sign up</h2>
+          <h2>Create account</h2>
           <form className="auth-form" onSubmit={handleSubmit}>
             <label className="field">
               <span>Full name</span>
@@ -75,7 +104,7 @@ function Signup() {
               <span>Email</span>
               <input
                 type="email"
-                placeholder="admin@oneluxstay.com"
+                placeholder="newadmin@oneluxstay.com"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 required
@@ -99,7 +128,7 @@ function Signup() {
           {error ? <p className="status-error">{error}</p> : null}
           {message ? <p className="status-success">{message}</p> : null}
           <p className="subtle-link">
-            <Link to="/signin">Back to log in</Link>
+            <Link to="/dashboard">Back to dashboard</Link>
           </p>
         </section>
       </section>
