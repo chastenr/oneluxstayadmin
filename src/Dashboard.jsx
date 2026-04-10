@@ -319,6 +319,29 @@ function Dashboard() {
     `${row.property} ${row.revenue} ${row.expenses} ${row.net}`.toLowerCase().includes(normalizedSearch)
   )
   const pageMeta = sectionContent[activeSection] || sectionContent.dashboard
+  const assistantContext = {
+    filters: {
+      dateRange,
+      propertyFilter,
+      searchQuery: normalizedSearch || null,
+    },
+    syncState,
+    syncError: syncState === 'issue' ? syncError : '',
+    lastSyncedAt,
+    latestBooking,
+    recentBookings: dashboardData.bookingSummary.slice(0, 10),
+    dashboard: {
+      sync: dashboardData.sync,
+      todaySnapshot: dashboardData.todaySnapshot,
+      portfolio: dashboardData.portfolio,
+      financialSummary: dashboardData.financialSummary,
+      alerts: dashboardData.alerts,
+      operations: dashboardData.operations,
+      reports: dashboardData.reports,
+      expenseSummary: dashboardData.expenseSummary,
+      profitSummary: dashboardData.profitSummary,
+    },
+  }
 
   async function handleSignOut() {
     await supabase.auth.signOut()
@@ -344,7 +367,10 @@ function Dashboard() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ question: finalQuestion }),
+        body: JSON.stringify({
+          question: finalQuestion,
+          dashboardContext: assistantContext,
+        }),
       })
 
       const text = await response.text()
@@ -1130,6 +1156,7 @@ function Dashboard() {
                   key={prompt}
                   type="button"
                   className={buttonSecondaryClasses}
+                  disabled={assistantLoading}
                   onClick={() => askAssistant(prompt)}
                 >
                   {prompt}
@@ -1149,6 +1176,7 @@ function Dashboard() {
               <button
                 type="button"
                 className={buttonPrimaryClasses}
+                disabled={assistantLoading}
                 onClick={() => askAssistant()}
               >
                 {assistantLoading ? 'Sending...' : 'Send question'}
