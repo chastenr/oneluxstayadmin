@@ -1,6 +1,6 @@
 /* global process */
 
-import { getLatestReservation } from './_lib/guesty.js'
+import { getCachedReservationSnapshot, getLatestReservation } from './_lib/guesty.js'
 const DEFAULT_OPENAI_TIMEOUT_MS = 12000
 
 function isRecord(value) {
@@ -448,10 +448,21 @@ export const handler = async (event) => {
       }
     }
 
-    const booking = await getLatestReservation()
+    let booking = null
+    let guestyError = ''
+
+    try {
+      booking = await getLatestReservation()
+    } catch (error) {
+      guestyError = error.message
+      booking =
+        getCachedReservationSnapshot().booking ||
+        (isRecord(dashboardContext?.latestBooking) ? dashboardContext.latestBooking : null)
+    }
+
     let aiAnswer = null
     let responseId = null
-    let usedFallback = false
+    let usedFallback = Boolean(guestyError)
 
     try {
       const result = await askOpenAI(question, booking, dashboardContext, history, previousResponseId)
@@ -468,6 +479,7 @@ export const handler = async (event) => {
         connected: true,
         answer: aiAnswer || buildAssistantReply(question, booking, dashboardContext),
         booking,
+        guestyError: guestyError || null,
         responseId,
         usedFallback,
       }),
