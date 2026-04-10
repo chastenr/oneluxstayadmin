@@ -80,6 +80,73 @@ function buildCapabilitiesReply() {
   return 'I can help with dashboard analysis, bookings, revenue, issue spotting, writing support, summaries, and general questions. For live topics like weather, breaking news, or current events, I can only answer accurately when live lookup is available.'
 }
 
+function findRelevantListingName(question, booking, dashboardContext) {
+  const lowerQuestion = question.toLowerCase()
+  const recentBookings = Array.isArray(dashboardContext?.recentBookings)
+    ? dashboardContext.recentBookings
+    : []
+
+  const matchedRecentBooking = recentBookings.find((item) => {
+    const listingName = cleanText(item?.listingName || item?.property).toLowerCase()
+    return listingName && lowerQuestion.includes(listingName)
+  })
+
+  if (matchedRecentBooking) {
+    return matchedRecentBooking.listingName || matchedRecentBooking.property || ''
+  }
+
+  const bookingListing = cleanText(booking?.listingName)
+
+  if (bookingListing && lowerQuestion.includes(bookingListing.toLowerCase())) {
+    return bookingListing
+  }
+
+  return bookingListing
+}
+
+function buildPropertyInfoFallbackReply(question, booking, dashboardContext) {
+  const lowerQuestion = question.toLowerCase()
+  const listingName = findRelevantListingName(question, booking, dashboardContext) || 'that property'
+
+  if (
+    lowerQuestion.includes('wifi') ||
+    lowerQuestion.includes('wi-fi') ||
+    lowerQuestion.includes('internet') ||
+    lowerQuestion.includes('password')
+  ) {
+    return `I do not see Wi-Fi details for ${listingName} in the dashboard or Guesty snapshot. If you want, I can help draft a guest message asking operations to confirm the correct network name and password.`
+  }
+
+  if (
+    lowerQuestion.includes('link') ||
+    lowerQuestion.includes('url') ||
+    lowerQuestion.includes('website')
+  ) {
+    return `I do not have a saved link for ${listingName} in the current data. Tell me what kind of link you need, like check-in instructions, payment, house rules, or Wi-Fi info, and I can help draft the right reply.`
+  }
+
+  if (
+    lowerQuestion.includes('address') ||
+    lowerQuestion.includes('location') ||
+    lowerQuestion.includes('door code') ||
+    lowerQuestion.includes('check-in code')
+  ) {
+    return `I do not see that property access information for ${listingName} in the current dashboard data. If you want, I can help you write a message to the guest or to your ops team to confirm it.`
+  }
+
+  return ''
+}
+
+function buildUnknownQuestionReply(question, booking, dashboardContext) {
+  const propertyInfoReply = buildPropertyInfoFallbackReply(question, booking, dashboardContext)
+
+  if (propertyInfoReply) {
+    return propertyInfoReply
+  }
+
+  return 'I do not have enough verified data to answer that properly from the current dashboard snapshot. Ask me about bookings, revenue, issues, property performance, or give me more detail and I will help as much as I can.'
+}
+
 function buildBookingSummary(booking) {
   if (!booking) {
     return 'Guesty is connected, but I could not find a recent reservation yet.'
@@ -294,6 +361,25 @@ function buildAssistantReply(question, booking, dashboardContext) {
     }
 
     return 'Deposit status is not mapped from Guesty yet. We still need Stripe deposit integration on the backend.'
+  }
+
+  if (
+    lowerQuestion.includes('wifi') ||
+    lowerQuestion.includes('wi-fi') ||
+    lowerQuestion.includes('internet') ||
+    lowerQuestion.includes('password') ||
+    lowerQuestion.includes('link') ||
+    lowerQuestion.includes('url') ||
+    lowerQuestion.includes('website') ||
+    lowerQuestion.includes('address') ||
+    lowerQuestion.includes('door code') ||
+    lowerQuestion.includes('check-in code')
+  ) {
+    return buildUnknownQuestionReply(question, latestBooking, dashboardContext)
+  }
+
+  if (lowerQuestion.includes('?') || lowerQuestion.split(' ').length > 4) {
+    return buildUnknownQuestionReply(question, latestBooking, dashboardContext)
   }
 
   return buildSnapshotReply(dashboard, latestBooking)
