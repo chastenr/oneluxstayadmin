@@ -45,10 +45,20 @@ const buttonSecondaryClasses =
   'inline-flex items-center justify-center rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm font-medium text-stone-700 transition duration-200 hover:-translate-y-0.5 hover:border-stone-300 hover:text-stone-950'
 
 const assistantPrompts = [
-  'How much did we make this week?',
-  'Which property is underperforming?',
-  'Any issues today?',
+  'Give me a quick business summary for today.',
+  'Which property is underperforming right now?',
+  'Any issues I should know about today?',
+  'Draft a professional reply to a guest complaint.',
 ]
+
+function createAssistantWelcomeMessage() {
+  return {
+    id: 'assistant-welcome',
+    role: 'assistant',
+    content:
+      'I can help with dashboard questions, booking and revenue analysis, writing support, and general questions. For live topics like weather or breaking news, I will use live lookup when available and clearly say when I cannot verify something in real time.',
+  }
+}
 
 const sectionContent = {
   dashboard: {
@@ -170,7 +180,8 @@ function Dashboard() {
   const [dateRange, setDateRange] = useState('week')
   const [propertyFilter, setPropertyFilter] = useState('all')
   const [question, setQuestion] = useState('')
-  const [answer, setAnswer] = useState('')
+  const [assistantMessages, setAssistantMessages] = useState([createAssistantWelcomeMessage()])
+  const [assistantResponseId, setAssistantResponseId] = useState(null)
   const [assistantError, setAssistantError] = useState('')
   const [assistantLoading, setAssistantLoading] = useState(false)
   const [summaryLoading, setSummaryLoading] = useState(true)
@@ -320,6 +331,10 @@ function Dashboard() {
   )
   const pageMeta = sectionContent[activeSection] || sectionContent.dashboard
   const assistantContext = {
+    runtime: {
+      localTime: new Date().toISOString(),
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+    },
     filters: {
       dateRange,
       propertyFilter,
@@ -358,8 +373,16 @@ function Dashboard() {
 
     setAssistantLoading(true)
     setAssistantError('')
-    setAnswer('')
-    setQuestion(finalQuestion)
+    setQuestion('')
+
+    const userMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      content: finalQuestion,
+    }
+
+    const nextMessages = [...assistantMessages, userMessage]
+    setAssistantMessages(nextMessages)
 
     try {
       const response = await fetch(`${apiBase}/guesty-assistant`, {
@@ -370,6 +393,11 @@ function Dashboard() {
         body: JSON.stringify({
           question: finalQuestion,
           dashboardContext: assistantContext,
+          history: nextMessages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+          previousResponseId: assistantResponseId,
         }),
       })
 
@@ -396,11 +424,36 @@ function Dashboard() {
         throw new Error(data.error ?? 'Unable to reach the assistant.')
       }
 
-      setAnswer(data.answer ?? 'No answer returned.')
+      setAssistantMessages((current) => [
+        ...current,
+        {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: data.answer ?? 'No answer returned.',
+        },
+      ])
+      setAssistantResponseId(
+        typeof data.responseId === 'string' && data.responseId.trim() ? data.responseId : null
+      )
     } catch (error) {
       setAssistantError(error.message)
+      setAssistantResponseId(null)
     } finally {
       setAssistantLoading(false)
+    }
+  }
+
+  function handleClearAssistantChat() {
+    setAssistantMessages([createAssistantWelcomeMessage()])
+    setAssistantResponseId(null)
+    setAssistantError('')
+    setQuestion('')
+  }
+
+  function handleAssistantKeyDown(event) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      askAssistant()
     }
   }
 
@@ -1146,11 +1199,11 @@ function Dashboard() {
         <Card className="p-6">
           <SectionHeader
             eyebrow="AI assistant"
-            title="Ask direct questions about the business"
-            description="Use the assistant for quick summaries, underperformance checks, and issue spotting."
+            title="Chat with the assistant"
+            description="Ask about the business, draft messages, or ask general questions in a more natural chat flow."
           />
           <div className="mt-6 space-y-4">
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {assistantPrompts.map((prompt) => (
                 <button
                   key={prompt}
@@ -1162,14 +1215,58 @@ function Dashboard() {
                   {prompt}
                 </button>
               ))}
+              <button
+                type="button"
+                className={buttonSecondaryClasses}
+                disabled={assistantLoading}
+                onClick={handleClearAssistantChat}
+              >
+                Clear chat
+              </button>
+            </div>
+
+            <div className="max-h-[420px] space-y-3 overflow-y-auto rounded-[28px] border border-stone-200 bg-stone-50/70 p-4">
+              {assistantMessages.map((message) => {
+                const isAssistant = message.role === 'assistant'
+
+                return (
+                  <div
+                    key={message.id}
+                    className={cx('flex', isAssistant ? 'justify-start' : 'justify-end')}
+                  >
+                    <div
+                      className={cx(
+                        'max-w-[88%] rounded-[24px] px-4 py-3 text-sm leading-7 shadow-sm',
+                        isAssistant
+                          ? 'border border-stone-200 bg-white text-stone-700'
+                          : 'bg-stone-950 text-white'
+                      )}
+                    >
+                      <p className="text-[11px] font-medium uppercase tracking-[0.24em] opacity-60">
+                        {isAssistant ? 'Assistant' : 'You'}
+                      </p>
+                      <p className="mt-2 whitespace-pre-wrap">{message.content}</p>
+                    </div>
+                  </div>
+                )
+              })}
+
+              {assistantLoading ? (
+                <div className="flex justify-start">
+                  <div className="rounded-[24px] border border-stone-200 bg-white px-4 py-3 text-sm text-stone-500 shadow-sm">
+                    Assistant is thinking...
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <textarea
-              rows="5"
+              rows="4"
               className={fieldClasses}
-              placeholder="Ask about revenue, issues, or property performance..."
+              placeholder="Ask anything about the business, writing help, or a general question..."
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
+              onKeyDown={handleAssistantKeyDown}
             />
 
             <div className="flex flex-wrap items-center gap-3">
@@ -1182,18 +1279,9 @@ function Dashboard() {
                 {assistantLoading ? 'Sending...' : 'Send question'}
               </button>
               <p className="text-sm text-stone-500">
-                Uses summarized data from the current executive dashboard.
+                Uses the current dashboard context and keeps follow-up chat history during this session.
               </p>
             </div>
-
-            {answer ? (
-              <div className="rounded-[24px] border border-stone-200 bg-white p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.24em] text-stone-400">
-                  Answer
-                </p>
-                <p className="mt-3 text-sm leading-7 text-stone-700">{answer}</p>
-              </div>
-            ) : null}
 
             {assistantError ? (
               <div className="rounded-[24px] border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">

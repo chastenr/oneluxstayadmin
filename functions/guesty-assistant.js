@@ -7,6 +7,10 @@ function isRecord(value) {
   return value && typeof value === 'object' && !Array.isArray(value)
 }
 
+function cleanText(value) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
 function getDashboardSnapshot(dashboardContext) {
   if (!isRecord(dashboardContext)) {
     return {}
@@ -46,6 +50,34 @@ function formatList(items) {
 function getReportById(dashboard, reportId) {
   const reports = Array.isArray(dashboard.reports) ? dashboard.reports : []
   return reports.find((report) => report.id === reportId) || null
+}
+
+function normalizeHistory(history) {
+  if (!Array.isArray(history)) {
+    return []
+  }
+
+  return history
+    .map((item) => ({
+      role: item?.role === 'assistant' ? 'assistant' : 'user',
+      content: cleanText(item?.content),
+    }))
+    .filter((item) => item.content)
+    .slice(-12)
+}
+
+function buildConversationTranscript(history) {
+  if (!history.length) {
+    return ''
+  }
+
+  return history
+    .map((item) => `${item.role === 'assistant' ? 'Assistant' : 'User'}: ${item.content}`)
+    .join('\n\n')
+}
+
+function buildCapabilitiesReply() {
+  return 'I can help with dashboard analysis, bookings, revenue, issue spotting, writing support, summaries, and general questions. For live topics like weather, breaking news, or current events, I can only answer accurately when live lookup is available.'
 }
 
 function buildBookingSummary(booking) {
@@ -170,15 +202,52 @@ function buildSnapshotReply(dashboard, booking) {
   return buildBookingSummary(booking)
 }
 
+function buildLiveDataFallbackReply(question) {
+  const lowerQuestion = question.toLowerCase()
+
+  if (lowerQuestion.includes('weather')) {
+    return 'I cannot verify live weather from the dashboard alone. If live lookup is enabled, I can answer current weather questions properly. Otherwise, tell me the city and I can help you phrase what to check or add live weather support to the app.'
+  }
+
+  if (
+    lowerQuestion.includes('news') ||
+    lowerQuestion.includes('latest') ||
+    lowerQuestion.includes('current') ||
+    lowerQuestion.includes('today')
+  ) {
+    return 'This looks like a live-information question. I can answer it well when live lookup is available, but I should not guess current facts without that access.'
+  }
+
+  return 'This question may need live information. I can help once live lookup is available, or I can still help with analysis, writing, and the dashboard data already in the app.'
+}
+
 function buildAssistantReply(question, booking, dashboardContext) {
   const latestBooking = getLatestKnownBooking(booking, dashboardContext)
   const dashboard = getDashboardSnapshot(dashboardContext)
+  const lowerQuestion = question.toLowerCase()
+
+  if (
+    lowerQuestion.includes('hello') ||
+    lowerQuestion.includes('hi') ||
+    lowerQuestion.includes('hey') ||
+    lowerQuestion.includes('what can you do') ||
+    lowerQuestion.includes('help me')
+  ) {
+    return buildCapabilitiesReply()
+  }
+
+  if (
+    lowerQuestion.includes('weather') ||
+    lowerQuestion.includes('temperature') ||
+    lowerQuestion.includes('forecast') ||
+    lowerQuestion.includes('news')
+  ) {
+    return buildLiveDataFallbackReply(question)
+  }
 
   if (!latestBooking && !Object.keys(dashboard).length) {
     return 'Guesty is connected, but I could not find a recent reservation yet.'
   }
-
-  const lowerQuestion = question.toLowerCase()
 
   if (
     lowerQuestion.includes('issue') ||
@@ -250,44 +319,95 @@ function getResponseText(data) {
   return ''
 }
 
-async function askOpenAI(question, booking, dashboardContext) {
+function shouldUseWebSearch(question) {
+  const lowerQuestion = question.toLowerCase()
+  const liveKeywords = [
+    'weather',
+    'temperature',
+    'forecast',
+    'today',
+    'tonight',
+    'tomorrow',
+    'latest',
+    'current',
+    'right now',
+    'now',
+    'news',
+    'score',
+    'stock',
+    'traffic',
+    'time in',
+  ]
+
+  return liveKeywords.some((keyword) => lowerQuestion.includes(keyword))
+}
+
+function buildOpenAIInput(question, booking, dashboardContext, history, useThreading) {
+  const currentSnapshot = `Current dashboard snapshot:\n${JSON.stringify(
+    dashboardContext,
+    null,
+    2
+  )}\n\nLatest Guesty booking data:\n${JSON.stringify(booking, null, 2)}`
+
+  if (useThreading) {
+    return `Admin question: ${question}\n\n${currentSnapshot}`
+  }
+
+  const transcript = buildConversationTranscript(history)
+
+  return `Conversation so far:\n${transcript || `User: ${question}`}\n\n${currentSnapshot}`
+}
+
+async function askOpenAI(question, booking, dashboardContext, history, previousResponseId) {
   const apiKey = String(process.env.OPENAI_API_KEY || '').trim()
 
   if (!apiKey) {
     return null
   }
 
-  const model = String(process.env.OPENAI_CHAT_MODEL || 'gpt-5-mini').trim() || 'gpt-5-mini'
+  const model = String(process.env.OPENAI_CHAT_MODEL || 'gpt-5.4-mini').trim() || 'gpt-5.4-mini'
   const timeoutMs = Number(process.env.OPENAI_TIMEOUT_MS) || DEFAULT_OPENAI_TIMEOUT_MS
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  const normalizedHistory = normalizeHistory(history)
+  const responseChainId = cleanText(previousResponseId)
+  const useThreading = Boolean(responseChainId)
+  const useLiveLookup = shouldUseWebSearch(question)
 
   let response
 
   try {
-    response = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        instructions:
-          'You are the OneLuxStay internal operations assistant. Answer using only the dashboard and Guesty data provided. Be concise, operational, and honest. If the data is missing, say that it is not available yet. Do not invent deposit or payment status unless explicitly provided.',
-        input: `Admin question: ${question}\n\nCurrent dashboard snapshot:\n${JSON.stringify(
-          dashboardContext,
-          null,
-          2
-        )}\n\nLatest Guesty booking data:\n${JSON.stringify(
-          booking,
-          null,
-          2
-        )}`,
-        max_output_tokens: 220,
-      }),
-      signal: controller.signal,
-    })
+    async function createResponse(withWebSearch) {
+      return fetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          instructions:
+            'You are the OneLuxStay AI assistant inside an admin dashboard. Be warm, clear, practical, and genuinely helpful. Use the dashboard and Guesty data when the question is about the business. You may also answer general knowledge, writing, brainstorming, and productivity questions in a ChatGPT-like way. For live topics such as weather, breaking news, current events, real-time traffic, or anything tied to today or right now, use live web lookup when it is available. If live verification is unavailable, say that clearly and do not guess. When the user refers to relative dates like today or tomorrow, be explicit about the date when useful. Never invent payment, deposit, or booking facts that are not present in the provided data.',
+          input: buildOpenAIInput(
+            question,
+            booking,
+            dashboardContext,
+            normalizedHistory,
+            useThreading
+          ),
+          previous_response_id: useThreading ? responseChainId : undefined,
+          tools: withWebSearch ? [{ type: 'web_search' }] : undefined,
+          max_output_tokens: 420,
+        }),
+        signal: controller.signal,
+      })
+    }
+
+    response = await createResponse(useLiveLookup)
+
+    if (!response.ok && useLiveLookup) {
+      response = await createResponse(false)
+    }
   } catch (error) {
     if (error.name === 'AbortError') {
       throw new Error(`OpenAI request timed out after ${timeoutMs}ms`)
@@ -305,7 +425,10 @@ async function askOpenAI(question, booking, dashboardContext) {
   }
 
   const data = await response.json()
-  return getResponseText(data)
+  return {
+    answer: getResponseText(data),
+    responseId: cleanText(data.id) || null,
+  }
 }
 
 export const handler = async (event) => {
@@ -313,6 +436,8 @@ export const handler = async (event) => {
     const body = event.httpMethod === 'POST' ? JSON.parse(event.body || '{}') : {}
     const question = String(body.question || '').trim()
     const dashboardContext = isRecord(body.dashboardContext) ? body.dashboardContext : null
+    const history = normalizeHistory(body.history)
+    const previousResponseId = cleanText(body.previousResponseId)
 
     if (!question) {
       return {
@@ -325,10 +450,14 @@ export const handler = async (event) => {
 
     const booking = await getLatestReservation()
     let aiAnswer = null
+    let responseId = null
     let usedFallback = false
 
     try {
-      aiAnswer = await askOpenAI(question, booking, dashboardContext)
+      const result = await askOpenAI(question, booking, dashboardContext, history, previousResponseId)
+      aiAnswer = result?.answer || null
+      responseId = result?.responseId || null
+      usedFallback = !aiAnswer
     } catch {
       usedFallback = true
     }
@@ -339,6 +468,7 @@ export const handler = async (event) => {
         connected: true,
         answer: aiAnswer || buildAssistantReply(question, booking, dashboardContext),
         booking,
+        responseId,
         usedFallback,
       }),
     }
